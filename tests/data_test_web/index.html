@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resurva Platform Inspector & Chatbot Tester</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo-icon">♻️</span>
+        <h1 class="logo-title">Resurva Inspector</h1>
+      </div>
+      
+      <!-- CONTROLS -->
+      <div class="control-section">
+        <div class="control-group">
+          <label for="store-select">Toko (Filter Store)</label>
+          <select id="store-select">
+            <option value="">-- Semua Toko --</option>
+          </select>
+        </div>
+        
+        <div class="control-group">
+          <label for="user-select">Chat Sebagai (Customer)</label>
+          <select id="user-select">
+            <option value="">-- Guest/Pilih Customer --</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- TABLE SELECTOR -->
+      <nav class="table-nav">
+        <h2 class="nav-title">Daftar Tabel Database</h2>
+        <ul id="table-list">
+          <li data-table="stores" class="active"><span>🏪</span> Stores</li>
+          <li data-table="products"><span>📦</span> Products</li>
+          <li data-table="inventory_batches"><span>📥</span> Inventory Batches</li>
+          <li data-table="expiry_alerts"><span>⚠️</span> Expiry Alerts</li>
+          <li data-table="orders"><span>🛒</span> Orders</li>
+          <li data-table="discounts"><span>🏷️</span> Discounts</li>
+          <li data-table="wallets"><span>💼</span> Wallets</li>
+          <li data-table="wallet_transactions"><span>💸</span> Wallet Transactions</li>
+          <li data-table="transactions"><span>💳</span> Transactions</li>
+          <li data-table="carbon_logs"><span>🪵</span> Carbon Logs</li>
+          <li data-table="reviews"><span>💬</span> Reviews</li>
+          <li data-table="daily_summaries"><span>📊</span> Daily Summaries</li>
+          <li data-table="monthly_summaries"><span>📈</span> Monthly Summaries</li>
+          <li data-table="users"><span>👥</span> Users</li>
+          <li data-table="businesses"><span>🏢</span> Businesses</li>
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+      <!-- HEADER -->
+      <header class="main-header">
+        <div class="header-info">
+          <h2 id="current-view-title">Tabel: Stores</h2>
+          <span id="api-endpoint-badge">API: /api/v1/stores/</span>
+        </div>
+        <div class="tab-switcher">
+          <button class="tab-btn active" data-tab="data-viewer-tab">📊 Data Viewer</button>
+          <button class="tab-btn" data-tab="chatbot-tab">🤖 Chatbot Tester</button>
+        </div>
+      </header>
+
+      <!-- TAB CONTENTS -->
+      <div class="tab-container">
+        
+        <!-- TAB 1: DATA VIEWER -->
+        <div id="data-viewer-tab" class="tab-content active">
+          <div class="data-toolbar">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="data-search" placeholder="Cari data di halaman ini...">
+            </div>
+            <div class="toolbar-actions">
+              <button id="btn-refresh" class="btn btn-secondary">🔄 Refresh</button>
+              <div class="page-size-selector">
+                <label for="page-size">Baris per hal:</label>
+                <select id="page-size">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- TABLECONTAINER -->
+          <div class="table-container">
+            <div id="loading-overlay" class="loading-overlay hidden">
+              <div class="spinner"></div>
+              <span>Memuat data...</span>
+            </div>
+            <table id="data-table">
+              <thead>
+                <!-- Populated dynamically -->
+              </thead>
+              <tbody>
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+            <div id="no-data-msg" class="no-data-msg hidden">Tidak ada data ditemukan.</div>
+          </div>
+
+          <!-- PAGINATION -->
+          <footer class="pagination-footer">
+            <div class="pagination-info" id="pagination-info">
+              Menampilkan 0 - 0 dari 0 baris
+            </div>
+            <div class="pagination-controls" id="pagination-controls">
+              <!-- Controls populated dynamically -->
+            </div>
+          </footer>
+        </div>
+
+        <!-- TAB 2: CHATBOT TESTER -->
+        <div id="chatbot-tab" class="tab-content">
+          <div class="chatbot-container">
+            <!-- CHAT SIDEBAR (CONVERSATIONS) -->
+            <div class="chat-conversations-panel">
+              <div class="panel-header">
+                <h3>Riwayat Chat</h3>
+                <button id="btn-new-chat" class="btn btn-primary btn-sm">+ Chat Baru</button>
+              </div>
+              <ul id="conversation-list" class="conversation-list">
+                <!-- Loaded dynamically -->
+              </ul>
+            </div>
+
+            <!-- CHAT WINDOW -->
+            <div class="chat-window">
+              <div class="chat-header" id="chat-header">
+                <div class="user-status">
+                  <span class="status-indicator offline" id="chat-status-indicator"></span>
+                  <span class="status-text" id="chat-status-text">Pilih User customer di sidebar untuk memulai chat</span>
+                </div>
+              </div>
+              
+              <div class="chat-messages" id="chat-messages">
+                <!-- Chat bubbles populated dynamically -->
+                <div class="chat-placeholder">
+                  <span class="placeholder-icon">🤖</span>
+                  <p>Pilih user customer dari panel sidebar kiri, lalu mulai chat untuk menguji asisten AI.</p>
+                </div>
+              </div>
+
+              <!-- CHAT INPUT -->
+              <form class="chat-input-form" id="chat-input-form">
+                <input type="text" id="chat-input" placeholder="Tanyakan stok, total sales, carbon saving, atau wallet balance..." disabled>
+                <button type="submit" id="btn-send-chat" class="btn btn-primary" disabled>Kirim</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="index.js"></script>
+</body>
+</html>

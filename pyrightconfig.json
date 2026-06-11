@@ -1,0 +1,19 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": [
+    "."
+  ],
+  "exclude": [
+    ".venv",
+    "**/__pycache__",
+    "migrations"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportOptionalMemberAccess": false,
+  "reportImplicitRelativeImport": false,
+  "reportPrivateLocalImportUsage": false,
+  "reportUnusedCallResult": false,
+  "reportAny": false
+}

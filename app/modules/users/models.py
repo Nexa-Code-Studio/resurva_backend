@@ -1,0 +1,34 @@
+import uuid
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import ForeignKey, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.enums import UserRole
+from app.db.base import Base, CreatedAtMixin, IdMixin
+
+if TYPE_CHECKING:
+    from app.modules.business.models import Business
+    from app.modules.carbon.models import CarbonLog
+    from app.modules.orders.models import Order
+    from app.modules.reviews.models import Review
+
+
+class User(Base, IdMixin, CreatedAtMixin):
+    __tablename__ = "users"
+
+    business_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("businesses.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    username: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    password: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[UserRole] = mapped_column(SQLEnum(UserRole), default=UserRole.CUSTOMER, nullable=False)
+
+    # Relationships
+    business: Mapped[Optional["Business"]] = relationship("Business", back_populates="users")
+    reviews: Mapped[list["Review"]] = relationship("Review", back_populates="user", cascade="all, delete-orphan")
+    orders: Mapped[list["Order"]] = relationship("Order", back_populates="user", cascade="all, delete-orphan")
+    carbon_logs: Mapped[list["CarbonLog"]] = relationship("CarbonLog", back_populates="user", cascade="all, delete-orphan")
