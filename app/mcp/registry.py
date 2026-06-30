@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.core.enums import UserRole
 from app.mcp.base_tool import BaseMCPTool
 
 
@@ -22,6 +23,10 @@ class MCPRegistry:
     def get_all_tool_schemas(self) -> list[dict[str, Any]]:
         """Return the JSON schemas of all registered tools."""
         return [tool.get_tool_schema() for tool in self._tools.values()]
+
+    def get_tool_schemas_for_role(self, role: UserRole) -> list[dict[str, Any]]:
+        """Return the JSON schemas of registered tools that are allowed for the given role."""
+        return [tool.get_tool_schema() for tool in self._tools.values() if role in tool.allowed_roles]
 
 
 # Global registry instance

@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Load initial dropdowns
   loadStoresDropdown();
-  loadCustomersDropdown();
+  loadSellersDropdown();
   
   // Initial Table Load
   loadTableData();
@@ -76,14 +76,14 @@ async function loadStoresDropdown() {
   }
 }
 
-async function loadCustomersDropdown() {
+async function loadSellersDropdown() {
   const select = document.getElementById('user-select');
   try {
-    const res = await fetch(`${API_BASE_URL}/users/?page=1&page_size=100&role=customer`);
+    const res = await fetch(`${API_BASE_URL}/users/?page=1&page_size=100&role=seller`);
     if (res.ok) {
       const data = await res.json();
-      const customers = data.items || [];
-      customers.forEach(user => {
+      const sellers = data.items || [];
+      sellers.forEach(user => {
         const option = document.createElement('option');
         option.value = user.id;
         option.textContent = `${user.username} (${user.email})`;
@@ -92,7 +92,7 @@ async function loadCustomersDropdown() {
       });
     }
   } catch (err) {
-    console.error('Gagal memuat daftar customer:', err);
+    console.error('Gagal memuat daftar seller:', err);
   }
 }
 
@@ -418,6 +418,7 @@ function setupChatbotTester() {
     
     state.userId = userId;
     state.username = selectedOption.dataset.username;
+    state.conversationId = ''; // Reset conversation ID to prevent sending messages to the old conversation
     
     // Auto login
     const email = `${state.username}@example.com`;
@@ -504,19 +505,29 @@ function setupChatbotTester() {
       });
       
       if (!res.ok) throw new Error('Gagal mengirim pesan');
-      const assistantResponse = await res.json();
+      const messages = await res.json();
       
       // Remove typing indicator and append actual answer
       typingBubble.remove();
       
-      // Reload message list to get tool calls details
-      await loadConversationMessages(state.conversationId);
+      // Render the messages list directly (user message, tool calls, and bot reply)
+      renderMessagesList(messages);
+      
+      // Re-enable inputs
+      chatInput.disabled = false;
+      btnSend.disabled = false;
+      chatInput.focus();
       
       // Proactively refresh tables in background to reflect any model changes
       loadTableData();
     } catch (err) {
       console.error(err);
-      typingBubble.textContent = `Error: ${err.message}`;
+      const contentDiv = typingBubble.querySelector('.message-content');
+      if (contentDiv) {
+        contentDiv.innerHTML = marked.parse(`Error: ${err.message}`);
+      } else {
+        typingBubble.innerHTML = marked.parse(`Error: ${err.message}`);
+      }
       chatInput.disabled = false;
       btnSend.disabled = false;
     }
@@ -541,7 +552,7 @@ function updateChatUIState(connected) {
     messageArea.innerHTML = `
       <div class="chat-placeholder">
         <span class="placeholder-icon">🤖</span>
-        <p>Pilih user customer dari panel sidebar kiri, lalu mulai chat untuk menguji asisten AI.</p>
+        <p>Pilih user seller dari panel sidebar kiri, lalu mulai chat untuk menguji asisten AI.</p>
       </div>
     `;
     state.conversationId = '';
@@ -612,9 +623,6 @@ async function loadConversations() {
 }
 
 async function loadConversationMessages(convId) {
-  const messageArea = document.getElementById('chat-messages');
-  messageArea.innerHTML = '';
-  
   const chatInput = document.getElementById('chat-input');
   const btnSend = document.getElementById('btn-send-chat');
   
@@ -629,66 +637,72 @@ async function loadConversationMessages(convId) {
     
     if (res.ok) {
       const messages = await res.json();
-      
-      if (messages.length === 0) {
-        messageArea.innerHTML = `
-          <div class="chat-placeholder">
-            <span class="placeholder-icon">💬</span>
-            <p>Percakapan kosong. Ketik pesan Anda di bawah untuk mengobrol.</p>
-          </div>
-        `;
-        return;
-      }
-      
-      messages.forEach(msg => {
-        // Skip system prompt to avoid clutter
-        if (msg.role === 'system') return;
-        
-        const bubble = appendMessageBubble(msg.role, msg.content, msg.created_at);
-        
-        // Render tool calls inside assistant bubble if available
-        if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-          const tcContainer = document.createElement('div');
-          tcContainer.className = 'tool-calls-container';
-          
-          msg.tool_calls.forEach(tc => {
-            const card = document.createElement('div');
-            card.className = 'tool-call-card';
-            
-            const header = document.createElement('div');
-            header.className = 'tool-call-header';
-            header.innerHTML = `<span>🔧 Tool Call: <b>${tc.tool_name}</b></span><span>▼</span>`;
-            
-            const body = document.createElement('div');
-            body.className = 'tool-call-body';
-            body.innerHTML = `
-              <div><span class="tool-label">Input Parameters:</span></div>
-              <pre>${formatJSONString(tc.tool_input)}</pre>
-              <div class="tool-call-divider"></div>
-              <div><span class="tool-label">Output Result:</span></div>
-              <pre>${formatJSONString(tc.tool_output)}</pre>
-            `;
-            
-            // Toggle body expand/collapse
-            header.addEventListener('click', () => {
-              body.style.display = body.style.display === 'none' ? 'block' : 'none';
-            });
-            
-            card.appendChild(header);
-            card.appendChild(body);
-            tcContainer.appendChild(card);
-          });
-          
-          bubble.appendChild(tcContainer);
-        }
-      });
-      
-      // Auto-scroll chat area
-      messageArea.scrollTop = messageArea.scrollHeight;
+      renderMessagesList(messages);
     }
   } catch (err) {
     console.error('Error loading messages:', err);
   }
+}
+
+function renderMessagesList(messages) {
+  const messageArea = document.getElementById('chat-messages');
+  messageArea.innerHTML = '';
+
+  if (messages.length === 0) {
+    messageArea.innerHTML = `
+      <div class="chat-placeholder">
+        <span class="placeholder-icon">💬</span>
+        <p>Percakapan kosong. Ketik pesan Anda di bawah untuk mengobrol.</p>
+      </div>
+    `;
+    return;
+  }
+
+  messages.forEach(msg => {
+    // Skip system prompt to avoid clutter
+    if (msg.role === 'system') return;
+
+    const bubble = appendMessageBubble(msg.role, msg.content, msg.created_at);
+
+    // Render tool calls inside assistant bubble if available
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      const tcContainer = document.createElement('div');
+      tcContainer.className = 'tool-calls-container';
+
+      msg.tool_calls.forEach(tc => {
+        const card = document.createElement('div');
+        card.className = 'tool-call-card';
+
+        const header = document.createElement('div');
+        header.className = 'tool-call-header';
+        header.innerHTML = `<span>🔧 Tool Call: <b>${tc.tool_name}</b></span><span>▼</span>`;
+
+        const body = document.createElement('div');
+        body.className = 'tool-call-body';
+        body.innerHTML = `
+          <div><span class="tool-label">Input Parameters:</span></div>
+          <pre>${formatJSONString(tc.tool_input)}</pre>
+          <div class="tool-call-divider"></div>
+          <div><span class="tool-label">Output Result:</span></div>
+          <pre>${formatJSONString(tc.tool_output)}</pre>
+        `;
+
+        // Toggle body expand/collapse
+        header.addEventListener('click', () => {
+          body.style.display = body.style.display === 'none' ? 'block' : 'none';
+        });
+
+        card.appendChild(header);
+        card.appendChild(body);
+        tcContainer.appendChild(card);
+      });
+
+      bubble.appendChild(tcContainer);
+    }
+  });
+
+  // Auto-scroll chat area
+  messageArea.scrollTop = messageArea.scrollHeight;
 }
 
 function appendMessageBubble(role, content, timeStr) {
@@ -701,8 +715,9 @@ function appendMessageBubble(role, content, timeStr) {
   const bubble = document.createElement('div');
   bubble.className = `message-bubble ${role}`;
   
-  const text = document.createElement('p');
-  text.textContent = content;
+  const text = document.createElement('div');
+  text.className = 'message-content';
+  text.innerHTML = marked.parse(content);
   bubble.appendChild(text);
   
   const time = document.createElement('span');

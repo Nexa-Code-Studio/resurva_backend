@@ -21,7 +21,9 @@ async def create_conversation(
 ):
     """Start a new chat conversation session."""
     service = ConversationService(db)
-    return await service.create_conversation(current_user.id, schema)
+    conv = await service.create_conversation(current_user.id, schema)
+    await db.commit()
+    return conv
 
 
 @router.get("/conversations", response_model=list[ConversationResponse])
@@ -48,10 +50,12 @@ async def get_messages(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation not found"
         )
-    return conv.messages
+    messages = list(conv.messages)
+    messages.sort(key=lambda m: m.created_at)
+    return messages
 
 
-@router.post("/conversations/{conversation_id}/messages", response_model=str)
+@router.post("/conversations/{conversation_id}/messages", response_model=list[ChatMessageResponse])
 async def send_message(
     conversation_id: uuid.UUID,
     user_message: str,
@@ -59,5 +63,19 @@ async def send_message(
     db: AsyncSession = Depends(get_db_session)
 ):
     """Send a user message to the AI chatbot and get a response."""
-    service = ChatService(db)
-    return await service.get_response(user_id=current_user.id, conversation_id=conversation_id, user_message=user_message)
+    chat_service = ChatService(db)
+    await chat_service.get_response(user_id=current_user.id, conversation_id=conversation_id, user_message=user_message)
+    await db.commit()
+
+    # Retrieve all messages sorted by creation time
+    conv_service = ConversationService(db)
+    conv = await conv_service.get_conversation(conversation_id)
+    if not conv or conv.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    messages = list(conv.messages)
+    messages.sort(key=lambda m: m.created_at)
+    return messages
+

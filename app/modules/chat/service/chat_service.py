@@ -1,12 +1,83 @@
+import json
 import uuid
 
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import AIFactory
-from app.modules.chat.constants import DEFAULT_SYSTEM_PROMPT
+from app.ai.interfaces.llm_provider import LLMProvider
+from app.core.enums import UserRole
+from app.mcp.registry import mcp_registry
+from app.modules.users.models import User
+from app.modules.business.models import Business
+from app.modules.stores.models import Store
 from app.modules.chat.service.conversation_service import ConversationService
 from app.modules.chat.service.memory_service import MemoryService
+from app.modules.chat.service.tool_call_service import ToolCallService
+
+MAX_TOOL_TURNS = 5
+
+
+def build_system_prompt(user: User, slots: dict[str, str] = None) -> str:
+    base = """Kamu adalah asisten bisnis untuk platform Food Waste Marketplace (Resurva).
+Kamu HANYA bisa membaca data dan memberikan rekomendasi. Kamu TIDAK bisa mengubah data apapun.
+Selalu jawab dalam Bahasa Indonesia secara ramah dan profesional. Gunakan angka konkret dari data yang tersedia.
+Jika data tidak tersedia, katakan dengan jelas dan jangan mengarang.
+
+PENTING UNTUK DIINGAT:
+- Jika pengguna menanyakan detail produk (seperti stok, rekomendasi produksi, audit, atau peringatan kedaluwarsa) berdasarkan namanya, kamu WAJIB mencari produk tersebut terlebih dahulu menggunakan tool 'product_search' untuk mendapatkan 'id' (UUID) produk yang valid. JANGAN PERNAH memberikan string nama produk mentah (seperti "muffin-blueberry") sebagai argumen 'product_id' ke tool lain yang memerlukan UUID.
+- Jika pengguna bertanya mengenai total produk atau ingin melihat seluruh daftar produk di toko, panggil tool 'product_search' dengan mengosongkan/tidak mengirimkan argumen 'query' (tapi wajib mengisi 'store_id') dan pastikan 'include_out_of_stock' bernilai true. Gunakan nilai 'total_count' dari hasil kembalian untuk menyebutkan total produk secara akurat.
+- Jika pemanggilan tool pencarian produk (product_search) mengembalikan lebih dari satu hasil produk yang mirip, kamu WAJIB menyajikan seluruh daftar produk tersebut (beserta confidence score / skor kecocokannya jika relevan) kepada pengguna.
+- Tanyakan secara ramah dan jelas mana produk yang mereka maksudkan.
+- JANGAN melanjutkan analisis atau memanggil tool operasional lainnya (seperti mengecek stok atau rincian batch kedaluwarsa) untuk salah satu produk secara sembarangan sebelum pengguna memberikan klarifikasi dan memilih produk yang mereka inginkan secara eksplisit.
+- JANGAN PERNAH menampilkan, menyebutkan, atau membocorkan ID database apapun secara eksplisit kepada pengguna dalam jawaban Anda (seperti store_id, business_id, product_id, user_id, dll. yang berformat UUID atau angka). ID database tersebut hanya boleh digunakan secara internal saat memanggil MCP tools. Selalu sebutkan nama toko atau nama produk secara langsung sebagai gantinya (misal: gunakan nama toko 'Sentosa Bakery - Tebet' daripada menuliskan store_id-nya).
+
+INFORMASI FORMULA AUDIT / KESEHATAN PRODUK (PRODUCT HEALTH/AUDIT):
+Jika pengguna bertanya mengenai dari mana skor kesehatan/audit produk berasal, bagaimana rumusnya, bobot komponennya, atau interpretasi statusnya, jawab dengan tepat sesuai ketentuan berikut:
+1. Skor Kesehatan/Audit dihitung dari skala 0-100 menggunakan gabungan 3 komponen utama:
+   - Volume Penjualan (Sales Volume) dengan bobot 40%. Dihitung dari penjualan produk tersebut dinormalisasi terhadap penjualan produk terlaris di toko tersebut (sold / max_sales * 100).
+   - Rating Pelanggan (Customer Ratings) dengan bobot 30%. Dihitung dari rata-rata rating ulasan pelanggan (avg_rating / 5.0 * 100). Jika belum ada ulasan, sistem menggunakan rata-rata rating toko sebagai fallback.
+   - Efisiensi Stok (Stock Efficiency) dengan bobot 30%. Dihitung dari rasio kelebihan stok terhadap rata-rata penjualan harian (overstock_ratio = stock / (avg_daily_sales * 3)). Skor efisiensi dihitung dengan rumus: max(0.0, 100.0 - (overstock_ratio * 50.0)). Jika rata-rata penjualan harian adalah 0, skor efisiensi bernilai 0.0 jika ada stok, dan 100.0 jika tidak ada stok.
+2. Status Kelayakan/Kesehatan Produk (Status):
+   - Skor >= 70.0: PERFORMING (Sehat, pertahankan produksi dan persediaan saat ini)
+   - Skor >= 50.0 dan < 70.0: OPTIMIZE (Perlu optimasi, tinjau harga, buat promosi ringan, atau perbaiki kualitas/review)
+   - Skor < 50.0: RETIRE (Kaji ulang / berpotensi dihentikan karena tidak efisien, rating buruk, atau penjualan rendah)"""
+
+    prompt = base
+    if user.role == UserRole.SELLER:
+        store_name = user.store.name if user.store else "Toko Anda"
+        store_id = str(user.store_id) if user.store_id else "tidak diset"
+        prompt += f"\n\nKONTEKS: Kamu membantu SELLER dari toko '{store_name}' (store_id: {store_id}).\n" \
+                      "- Kamu HANYA boleh melihat data toko ini, bukan toko lain.\n" \
+                      "- Fokus pada: stok, produk hampir expired, omzet harian, review pelanggan.\n" \
+                      "- Berikan rekomendasi actionable (misal: 'diskon produk X karena expired 2 hari lagi').\n" \
+                      "- Jangan tampilkan data financial sensitif seperti detail wallet toko lain."
+
+    elif user.role == UserRole.OWNER:
+        business_name = user.business.name if user.business else "Bisnis Anda"
+        business_id = str(user.business_id) if user.business_id else "tidak diset"
+        stores_info = ""
+        if user.business and user.business.stores:
+            stores_info = ", ".join([f"'{s.name}' (ID: {s.id})" for s in user.business.stores])
+        else:
+            stores_info = "Belum ada toko yang terdaftar"
+        prompt += f"\n\nKONTEKS: Kamu membantu OWNER bisnis '{business_name}' (business_id: {business_id}).\n" \
+                      f"- Toko-toko Anda: {stores_info}.\n" \
+                      "- Kamu bisa melihat semua toko Anda.\n" \
+                      "- Fokus pada: perbandingan performa antar toko, tren revenue, carbon impact keseluruhan.\n" \
+                      "- Bisa melihat data wallet dan transaksi toko Anda.\n" \
+                      "- Berikan insight strategis level bisnis."
+
+    if slots:
+        slot_lines = []
+        if slots.get("selected_product_id"):
+            slot_lines.append(f"- Produk terpilih saat ini: '{slots.get('selected_product_name')}' (ID/UUID: {slots.get('selected_product_id')})")
+        if slot_lines:
+            prompt += "\n\nKONTEKS VARIABEL SESI OBROLAN AKTIF:\n" + "\n".join(slot_lines)
+
+    return prompt
 
 
 class ChatService:
@@ -14,29 +85,154 @@ class ChatService:
         self.db = db
         self.conv_service = ConversationService(db)
         self.memory_service = MemoryService(db)
+        self.tool_call_service = ToolCallService(db)
 
     async def get_response(self, user_id: uuid.UUID, conversation_id: uuid.UUID, user_message: str) -> str:
-        # 1. Fetch conversation history
+        # Load user context with business, stores, and store relationships
+        user_res = await self.db.execute(
+            select(User)
+            .options(
+                selectinload(User.business).selectinload(Business.stores),
+                selectinload(User.store)
+            )
+            .where(User.id == user_id)
+        )
+        user = user_res.scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
         conv = await self.conv_service.get_conversation(conversation_id)
         if not conv or conv.user_id != user_id:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
-        # 2. Save user message to DB
         await self.conv_service.add_message(conversation_id, "user", user_message)
 
-        # 3. Build chat history payload for LLM
-        messages = [{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}]
+        # Build allowed store IDs for verification boundaries
+        allowed_store_ids = []
+        if user.role == UserRole.SELLER:
+            if user.store_id:
+                allowed_store_ids = [str(user.store_id)]
+        elif user.role == UserRole.OWNER:
+            if user.business and user.business.stores:
+                allowed_store_ids = [str(s.id) for s in user.business.stores]
+
+        # Dynamically build system prompt
+        from app.modules.chat.service.session_service import SessionService
+        slots = await SessionService.get_slots(conversation_id)
+        system_prompt = build_system_prompt(user, slots)
+
+        llm = AIFactory.get_llm_provider()
+
+        # 1. Intent Detection Layer
+        intent_system = (
+            "Klasifikasikan pesan terbaru dari pengguna ke dalam salah satu dari intent berikut:\n"
+            "- SEARCH_PRODUCT: Pengguna ingin mencari/mengecek/menjelajahi produk surplus yang tersedia.\n"
+            "- CHECK_STOCK: Pengguna ingin mengecek ketersediaan stok, kuantitas batch, atau masa kedaluwarsa (expiry) produk.\n"
+            "- CHECK_ORDER: Pengguna ingin melihat riwayat transaksi, performa penjualan harian/bulanan, omzet, detail wallet toko.\n"
+            "- ANALYTICS_RECOMMENDATIONS: Pengguna meminta rekomendasi stok, wawasan bisnis, tren penjualan terendah/tertinggi, atau ramalan penjualan produk untuk hari tertentu.\n"
+            "- GENERAL_CHAT: Sapaan (halo/hai), terima kasih, obrolan umum, penjelasan konsep, atau topik di luar data dinamis toko.\n\n"
+            "HANYA balas dengan nama intent dalam huruf kapital (contoh: GENERAL_CHAT). Jangan sertakan karakter, spasi tambahan, atau teks penjelasan lainnya."
+        )
+
+        intent_str = "GENERAL_CHAT"
+        try:
+            intent_response = await llm.generate_response(user_message, system_prompt=intent_system)
+            cleaned_intent = intent_response.strip().upper()
+            for candidate in ["SEARCH_PRODUCT", "CHECK_STOCK", "CHECK_ORDER", "ANALYTICS_RECOMMENDATIONS", "GENERAL_CHAT"]:
+                if candidate in cleaned_intent:
+                    intent_str = candidate
+                    break
+        except Exception:
+            intent_str = "GENERAL_CHAT"
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Classified user intent: {intent_str}")
+
+        # 2. Filter schemas based on intent & role
+        allowed_tools = mcp_registry.get_tool_schemas_for_role(user.role)
+
+        if intent_str == "GENERAL_CHAT":
+            tool_schemas = []
+        else:
+            # Expose the full suite of allowed tools for their role to enable entity resolution
+            # and complex multi-step reasoning.
+            tool_schemas = allowed_tools
+
+        messages = [{"role": "system", "content": system_prompt}]
         for msg in conv.messages:
             messages.append({"role": msg.role, "content": msg.content})
-
-        # Add the current message
         messages.append({"role": "user", "content": user_message})
 
-        # 4. Generate LLM response
-        llm = AIFactory.get_llm_provider()
-        response_content = await llm.generate_chat_response(messages)
+        for turn in range(MAX_TOOL_TURNS):
+            kwargs = {}
+            if tool_schemas:
+                kwargs["tools"] = tool_schemas
 
-        # 5. Save assistant response to DB
-        await self.conv_service.add_message(conversation_id, "assistant", response_content)
+            response = await llm.generate_chat_response(messages, **kwargs)
 
-        return response_content
+            if not response.tool_calls:
+                final_content = response.content or ""
+                await self.conv_service.add_message(conversation_id, "assistant", final_content)
+                return final_content
+
+            assistant_msg_obj = await self.conv_service.add_message(
+                conversation_id, "assistant", response.content or ""
+            )
+
+            openai_tool_calls = []
+            for tc in response.tool_calls:
+                openai_tool_calls.append({
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {
+                        "name": tc.name,
+                        "arguments": json.dumps(tc.arguments)
+                    }
+                })
+
+            messages.append({
+                "role": "assistant",
+                "content": response.content,
+                "tool_calls": openai_tool_calls
+            })
+
+            for tc in response.tool_calls:
+                result = await self.tool_call_service.execute_and_log_tool(
+                    chat_message_id=assistant_msg_obj.id,
+                    role=user.role,
+                    allowed_store_ids=allowed_store_ids,
+                    tool_name=tc.name,
+                    arguments=tc.arguments
+                )
+                
+                # Update session slots on successful product search
+                if tc.name == "product_search" and isinstance(result, dict) and result.get("success") is True:
+                    data = result.get("data", {})
+                    products = data.get("results", [])
+                    if len(products) == 1:
+                        await SessionService.set_slots(
+                            conversation_id,
+                            {
+                                "selected_product_id": str(products[0]["id"]),
+                                "selected_product_name": products[0]["name"]
+                            }
+                        )
+                    elif len(products) > 1:
+                        await SessionService.set_slots(
+                            conversation_id,
+                            {
+                                "selected_product_id": None,
+                                "selected_product_name": None
+                            }
+                        )
+                
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(result)
+                })
+
+        fallback = "Maaf, saya tidak bisa menyelesaikan permintaan Anda dalam beberapa langkah. Silakan coba lagi."
+        await self.conv_service.add_message(conversation_id, "assistant", fallback)
+        return fallback

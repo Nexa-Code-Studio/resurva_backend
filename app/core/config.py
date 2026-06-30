@@ -54,5 +54,11 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str | None = None
     AI_MODEL_NAME: str = "gpt-4o"
 
+    # Redis Settings
+    REDIS_HOST: str = "127.0.0.1"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str | None = None
+    REDIS_DB: int = 0
+
 
 settings = Settings()

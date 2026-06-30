@@ -3,6 +3,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.enums import UserRole
 from app.mcp.orchestrator import MCPOrchestrator
 from app.modules.chat.models import ToolCall
 from app.modules.chat.repository import ToolCallRepository
@@ -12,9 +13,22 @@ class ToolCallService:
     def __init__(self, db: AsyncSession):
         self.repository = ToolCallRepository(db)
 
-    async def execute_and_log_tool(self, chat_message_id: uuid.UUID, tool_name: str, arguments: dict) -> dict:
+    async def execute_and_log_tool(
+        self,
+        chat_message_id: uuid.UUID,
+        role: UserRole,
+        allowed_store_ids: list[str] | set[str],
+        tool_name: str,
+        arguments: dict
+    ) -> dict:
         # Execute tool via MCP
-        res = await MCPOrchestrator.execute_tool(tool_name, arguments)
+        res = await MCPOrchestrator.execute_tool(
+            db=self.repository.db,
+            role=role,
+            allowed_store_ids=allowed_store_ids,
+            name=tool_name,
+            arguments=arguments
+        )
 
         # Log to DB
         tool_call = ToolCall(

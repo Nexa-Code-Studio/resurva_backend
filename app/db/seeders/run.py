@@ -141,11 +141,11 @@ async def seed_data():
             logger.info("Creating users...")
             users = [
                 User(id=owner_ids[0], business_id=b_ids[0], username="owner_sentosa", email="owner_sentosa@example.com", password=hashed_password, role=UserRole.OWNER),
-                User(id=seller_ids[0], business_id=b_ids[0], username="seller_sentosa", email="seller_sentosa@example.com", password=hashed_password, role=UserRole.SELLER),
+                User(id=seller_ids[0], business_id=b_ids[0], store_id=s_ids[0], username="seller_sentosa", email="seller_sentosa@example.com", password=hashed_password, role=UserRole.SELLER),
                 User(id=owner_ids[1], business_id=b_ids[1], username="owner_green", email="owner_green@example.com", password=hashed_password, role=UserRole.OWNER),
-                User(id=seller_ids[1], business_id=b_ids[1], username="seller_green", email="seller_green@example.com", password=hashed_password, role=UserRole.SELLER),
+                User(id=seller_ids[1], business_id=b_ids[1], store_id=s_ids[1], username="seller_green", email="seller_green@example.com", password=hashed_password, role=UserRole.SELLER),
                 User(id=owner_ids[2], business_id=b_ids[2], username="owner_mpoksiti", email="owner_mpoksiti@example.com", password=hashed_password, role=UserRole.OWNER),
-                User(id=seller_ids[2], business_id=b_ids[2], username="seller_mpoksiti", email="seller_mpoksiti@example.com", password=hashed_password, role=UserRole.SELLER),
+                User(id=seller_ids[2], business_id=b_ids[2], store_id=s_ids[2], username="seller_mpoksiti", email="seller_mpoksiti@example.com", password=hashed_password, role=UserRole.SELLER),
                 User(id=admin_id, username="super_admin", email="admin@resurva.com", password=hashed_password, role=UserRole.ADMIN)
             ]
 

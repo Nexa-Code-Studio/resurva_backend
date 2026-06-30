@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.modules.carbon.models import CarbonLog
     from app.modules.orders.models import Order
     from app.modules.reviews.models import Review
+    from app.modules.stores.models import Store
 
 
 class User(Base, IdMixin, CreatedAtMixin):
@@ -22,6 +23,10 @@ class User(Base, IdMixin, CreatedAtMixin):
         ForeignKey("businesses.id", ondelete="SET NULL"),
         nullable=True
     )
+    store_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("stores.id", ondelete="SET NULL"),
+        nullable=True
+    )
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
     password: Mapped[str] = mapped_column(String, nullable=False)
@@ -29,6 +34,7 @@ class User(Base, IdMixin, CreatedAtMixin):
 
     # Relationships
     business: Mapped[Optional["Business"]] = relationship("Business", back_populates="users")
+    store: Mapped[Optional["Store"]] = relationship("Store")
     reviews: Mapped[list["Review"]] = relationship("Review", back_populates="user", cascade="all, delete-orphan")
     orders: Mapped[list["Order"]] = relationship("Order", back_populates="user", cascade="all, delete-orphan")
     carbon_logs: Mapped[list["CarbonLog"]] = relationship("CarbonLog", back_populates="user", cascade="all, delete-orphan")
