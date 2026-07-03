@@ -4,12 +4,33 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
+from app.modules.auth.service.access_context_service import AccessContextService, TokenUser
+from app.modules.users.models import User
 from app.modules.users.schemas import UserResponse
 from app.modules.users.service.users_service import UserService
 
 from app.core.pagination import PaginatedResponse, PaginationMetadata
 
 router = APIRouter()
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(
+    current_user: TokenUser = Depends(AccessContextService.get_token_user)
+):
+    """Retrieve current authenticated user profile."""
+    return UserResponse.model_validate(current_user)
+
+
+@router.get("/me/sustainability")
+async def get_my_sustainability_stats(
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Retrieve sustainability statistics for the current user."""
+    from app.modules.carbon.service.carbon_service import CarbonService
+    service = CarbonService(db)
+    return await service.get_user_sustainability_stats(current_user.id)
 
 
 @router.get("/", response_model=PaginatedResponse[UserResponse])
@@ -49,3 +70,4 @@ async def get_user(
 ):
     service = UserService(db)
     return await service.get_user(user_id)
+

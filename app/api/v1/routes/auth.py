@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.auth.schemas import LoginRequest, TokenResponse
+from app.modules.auth.schemas import LoginRequest, RefreshRequest, TokenResponse
 from app.modules.auth.service.auth_service import AuthService
 from app.modules.users.schemas import UserCreate, UserResponse
 
@@ -30,6 +30,26 @@ async def login(
     return await auth_service.login(schema)
 
 
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh(
+    schema: RefreshRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Refresh access and refresh tokens using Refresh Token Rotation."""
+    auth_service = AuthService(db)
+    return await auth_service.refresh_tokens(schema.refresh_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    schema: RefreshRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Revoke the refresh token on user logout."""
+    auth_service = AuthService(db)
+    await auth_service.logout(schema.refresh_token)
+
+
 @router.post("/swagger-login", response_model=TokenResponse, include_in_schema=False)
 async def swagger_login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -42,3 +62,4 @@ async def swagger_login(
         password=form_data.password
     )
     return await auth_service.login(req)
+

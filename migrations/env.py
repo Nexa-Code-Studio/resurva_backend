@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.db.base import Base
 
 # Import all models to ensure they are registered on Base.metadata for autogenerate
+from app.modules.auth.models import RefreshToken
 from app.modules.business.models import Business
 from app.modules.users.models import User
 from app.modules.stores.models import Store

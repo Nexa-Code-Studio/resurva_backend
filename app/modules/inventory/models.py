@@ -29,6 +29,7 @@ class InventoryBatch(Base, IdMixin, CreatedAtMixin):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     remaining_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     expired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    available_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     product: Mapped["Product"] = relationship("Product", back_populates="inventory_batches")

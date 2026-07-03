@@ -31,3 +31,14 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Graphify and Agent tools
+graphify-out/
+.agents/
+.opencode/
+
+# Linters/Formatters
+.ruff_cache/
+
+# User uploads
+uploads/

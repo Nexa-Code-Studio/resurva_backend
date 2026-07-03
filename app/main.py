@@ -17,8 +17,10 @@ from app.modules.summaries.models import DailySummary, MonthlySummary
 from app.modules.transactions.models import Transaction
 
 # Import all models to ensure they are registered with SQLAlchemy Base metadata at startup
+from app.modules.auth.models import RefreshToken
 from app.modules.users.models import User
 from app.modules.wallets.models import Wallet, WalletTransaction
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -39,6 +41,9 @@ app.add_middleware(
 
 # Register central routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+from fastapi.staticfiles import StaticFiles
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.get("/", tags=["Health"])

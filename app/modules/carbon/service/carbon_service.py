@@ -25,6 +25,39 @@ class CarbonService:
         )
         return result.scalar() or 0.0
 
+    async def get_user_sustainability_stats(self, user_id: uuid.UUID) -> dict:
+        from sqlalchemy import select, func
+        from app.core.enums import OrderStatus
+        from app.modules.carbon.models import CarbonLog
+        from app.modules.orders.models import Order, OrderItem
+
+        # 1. Total CO2 saved
+        co2_res = await self.repository.db.execute(
+            select(func.sum(CarbonLog.carbon_saved_kg)).filter(CarbonLog.user_id == user_id)
+        )
+        co2_saved = co2_res.scalar() or 0.0
+
+        # 2. Total items/meals saved (sum of quantity of completed orders)
+        meals_res = await self.repository.db.execute(
+            select(func.sum(OrderItem.quantity))
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(Order.user_id == user_id, Order.status == OrderStatus.COMPLETED)
+        )
+        meals_saved = meals_res.scalar() or 0
+
+        # Convert meals saved count to estimated kg (e.g. 0.5 kg per meal)
+        food_saved_kg = meals_saved * 0.5
+
+        # Avoided emissions metaphor: co2_saved * 4.1 (km equivalent of standard car driving)
+        emissions_avoided_km = co2_saved * 4.1
+
+        return {
+            "co2_saved_kg": round(co2_saved, 2),
+            "food_saved_kg": round(food_saved_kg, 2),
+            "meals_saved_count": meals_saved,
+            "emissions_avoided_km": round(emissions_avoided_km, 2)
+        }
+
     async def list_carbon_logs_paginated(
         self,
         page: int = 1,

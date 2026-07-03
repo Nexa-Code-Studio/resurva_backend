@@ -23,9 +23,9 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(truncated, salt).decode("utf-8")
 
 
-def create_access_token(subject: str | Any, expires_delta: timedelta | None = None) -> str:
+def create_access_token(subject: str | Any, data: dict[str, Any] | None = None, expires_delta: timedelta | None = None) -> str:
     """
-    Create a JWT access token for a subject (usually user ID).
+    Create a JWT access token for a subject (usually user ID) with optional custom data claims.
     """
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
@@ -37,6 +37,8 @@ def create_access_token(subject: str | Any, expires_delta: timedelta | None = No
         "sub": str(subject),
         "type": "access"
     }
+    if data:
+        to_encode.update(data)
 
     encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return encoded_jwt
