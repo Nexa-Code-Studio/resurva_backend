@@ -88,17 +88,8 @@ class OrderSeeder:
         status_weights = [0.90, 0.05, 0.03, 0.02]
         payment_choices = [PaymentMethod.QRIS, PaymentMethod.GOPAY, PaymentMethod.OVO, PaymentMethod.CASH, PaymentMethod.TRANSFER]
 
-        def get_product_lifespan(p_type):
-            if p_type == ProductType.BAKERY:
-                return timedelta(days=1)
-            elif p_type == ProductType.PRODUCE:
-                return timedelta(days=3)
-            elif p_type == ProductType.READY_TO_EAT:
-                return timedelta(hours=12)
-            elif p_type == ProductType.PACKAGED:
-                return timedelta(days=180)
-            else:
-                return timedelta(days=30)
+        def get_product_lifespan(prod):
+            return timedelta(hours=prod.expiry_time)
 
         active_batches = {p.id: [] for p in products}
 
@@ -201,7 +192,8 @@ class OrderSeeder:
                         shortage = qty - allocated_qty
                         new_batch_id = uuid.uuid4()
                         batch_qty = shortage + local_random.randint(30, 80)
-                        expired_at = order_time + get_product_lifespan(prod.product_type)
+                        expired_at = order_time + get_product_lifespan(prod)
+                        avail_from = order_time - timedelta(hours=local_random.randint(1, 4))
 
                         new_batch = {
                             "id": new_batch_id,
@@ -209,7 +201,8 @@ class OrderSeeder:
                             "store_id": store_id,
                             "quantity": batch_qty,
                             "remaining_quantity": batch_qty - shortage,
-                            "expired_at": expired_at
+                            "expired_at": expired_at,
+                            "available_from": avail_from
                         }
                         active_batches[prod.id].append(new_batch)
 
@@ -220,7 +213,8 @@ class OrderSeeder:
                             "quantity": batch_qty,
                             "remaining_quantity": batch_qty,
                             "expired_at": expired_at,
-                            "created_at": order_time - timedelta(hours=local_random.randint(1, 4))
+                            "available_from": avail_from,
+                            "created_at": avail_from
                         })
 
                         order_item_batches_chunk.append({
@@ -302,7 +296,8 @@ class OrderSeeder:
 
                 if t_status == TransactionStatus.SUCCESS:
                     store_balances[store_id] += net_amount
-                    wallet_id = wallet_ids[0] if store_id == store_ids[0] else (wallet_ids[1] if store_id == store_ids[1] else wallet_ids[2])
+                    store_idx = store_ids.index(store_id)
+                    wallet_id = wallet_ids[store_idx]
 
                     wallet_transactions_chunk.append({
                         "id": uuid.uuid4(),
@@ -403,7 +398,8 @@ class OrderSeeder:
 
         # 3. Sync balances & stock numbers
         for s_id, final_bal in store_balances.items():
-            w_id = wallet_ids[0] if s_id == store_ids[0] else (wallet_ids[1] if s_id == store_ids[1] else wallet_ids[2])
+            store_idx = store_ids.index(s_id)
+            w_id = wallet_ids[store_idx]
             await session.execute(
                 text("UPDATE wallets SET balance = :bal, updated_at = :now WHERE id = :wid"),
                 {"bal": final_bal, "now": datetime.now(UTC), "wid": w_id}

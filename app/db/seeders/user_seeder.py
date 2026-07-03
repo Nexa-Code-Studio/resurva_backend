@@ -8,6 +8,7 @@ from app.modules.users.models import User
 
 logger = logging.getLogger("app.db.seeders.user")
 
+
 class UserSeeder:
     @staticmethod
     async def seed(
@@ -16,62 +17,61 @@ class UserSeeder:
         store_ids: list[uuid.UUID]
     ) -> dict[str, list[uuid.UUID]]:
         """
-        Seeds the database with various types of users for 1 enterprise:
+        Seeds the database with various types of users:
         - 1 Admin
-        - 1 Owner (linked to the single business)
-        - 3 Sellers (one per store)
-        - 50 Customers (all can transact across all 3 stores)
-
+        - 5 Owners (linked to businesses)
+        - 50 Sellers (linked to businesses and specific stores)
+        - 50 Customers
+        
         Returns a dictionary mapping role names to lists of generated user UUIDs.
         """
         logger.info("Seeding users...")
         hashed_password = get_password_hash("password123")
 
+        # 1. Pre-generate UUIDs
         admin_ids = [uuid.uuid4()]
-        owner_ids = [uuid.uuid4()]
-        seller_ids = [uuid.uuid4() for _ in range(3)]
+        owner_ids = [uuid.uuid4() for _ in range(len(business_ids))]
+        seller_ids = [uuid.uuid4() for _ in range(len(store_ids))]
         customer_ids = [uuid.uuid4() for _ in range(50)]
 
-        b_id = business_ids[0]
         users = []
 
-        # 1. Admin
-        users.append(User(
-            id=admin_ids[0],
-            username="super_admin",
-            email="admin@resurva.com",
-            password=hashed_password,
-            role=UserRole.ADMIN
-        ))
+        # 2. Seed Admin
+        users.append(
+            User(
+                id=admin_ids[0],
+                username="super_admin",
+                email="admin@resurva.com",
+                password=hashed_password,
+                role=UserRole.ADMIN
+            )
+        )
 
-        # 2. Owner
-        users.append(User(
-            id=owner_ids[0],
-            business_id=b_id,
-            username="owner_warungmalang",
-            email="owner@warungmalang.example.com",
-            password=hashed_password,
-            role=UserRole.OWNER
-        ))
+        # 3. Seed Owners
+        for idx, b_id in enumerate(business_ids):
+            users.append(User(
+                id=owner_ids[idx],
+                business_id=b_id,
+                username=f"owner_business_{idx + 1}",
+                email=f"owner_biz{idx + 1}@resurva.com",
+                password=hashed_password,
+                role=UserRole.OWNER
+            ))
 
-        # 3. Sellers — 1 per store
-        seller_data = [
-            ("seller_klojen",   "seller_klojen@warungmalang.example.com",   store_ids[0]),
-            ("seller_blimbing", "seller_blimbing@warungmalang.example.com", store_ids[1]),
-            ("seller_sukun",    "seller_sukun@warungmalang.example.com",    store_ids[2]),
-        ]
-        for idx, (uname, email, s_id) in enumerate(seller_data):
+        # 4. Seed Sellers — 1 per store, linked to correct store and business
+        for idx, st_id in enumerate(store_ids):
+            b_id = business_ids[idx // 10] if (idx // 10) < len(business_ids) else business_ids[-1]
             users.append(User(
                 id=seller_ids[idx],
                 business_id=b_id,
-                store_id=s_id,
-                username=uname,
-                email=email,
+                store_id=st_id,
+                username=f"seller_store_{idx + 1}",
+                email=f"seller_store{idx + 1}@resurva.com",
                 password=hashed_password,
                 role=UserRole.SELLER
             ))
 
-        # 4. Customers — 50 diverse entries, all can shop at any store
+        # 5. Seed Customers (50 diverse entries)
         first_names = [
             "Budi", "Siti", "Ani", "Dodi", "Eka", "Rizky", "Dewi", "Agus", "Mega", "Hendra",
             "Yanto", "Rina", "Adit", "Fitri", "Tono", "Wati", "Andi", "Sri", "Joko", "Lilis"
@@ -82,6 +82,7 @@ class UserSeeder:
             "Lubis", "Pasaribu", "Pohan", "Simanjuntak"
         ]
 
+        # Use local Random instance to preserve seed reproducibility
         local_random = random.Random(42)
         generated_usernames = set()
 
@@ -102,6 +103,7 @@ class UserSeeder:
                 role=UserRole.CUSTOMER
             ))
 
+        # 6. Add all to session
         session.add_all(users)
         await session.flush()
         logger.info(f"Successfully seeded {len(users)} users.")

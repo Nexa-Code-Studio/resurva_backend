@@ -42,6 +42,9 @@ app.add_middleware(
 # Register central routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+from fastapi.staticfiles import StaticFiles
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 
 @app.get("/", tags=["Health"])
 async def root():

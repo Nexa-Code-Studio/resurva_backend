@@ -34,6 +34,7 @@ class Store(Base, IdMixin, CreatedAtMixin):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     category: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     pickup_time: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    image_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Relationships
     business: Mapped["Business"] = relationship("Business", back_populates="stores")

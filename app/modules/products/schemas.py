@@ -15,6 +15,8 @@ class ProductBase(BaseModel):
     product_type: ProductType = Field(..., description="Product category")
     expired_at: datetime = Field(..., description="Expiration timestamp")
     store_id: uuid.UUID = Field(..., description="Parent Store UUID")
+    image_url: str | None = Field(None, description="Product image URL")
+    expiry_time: int = Field(24, description="Default expiry time in hours")
 
 
 class ProductCreate(ProductBase):
@@ -30,6 +32,8 @@ class ProductUpdate(BaseModel):
     product_type: ProductType | None = None
     expired_at: datetime | None = None
     store_id: uuid.UUID | None = None
+    image_url: str | None = None
+    expiry_time: int | None = None
 
 
 class ProductResponse(ProductBase):

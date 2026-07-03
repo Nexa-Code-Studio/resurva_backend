@@ -14,6 +14,7 @@ class StoreBase(BaseModel):
     is_active: bool = True
     category: str | None = Field(None, description="Store category")
     pickup_time: str | None = Field(None, description="Store pickup window hours")
+    image_url: str | None = Field(None, description="Publicly accessible logo or cover image URL")
 
 
 class StoreCreate(StoreBase):
@@ -29,6 +30,7 @@ class StoreUpdate(BaseModel):
     is_active: bool | None = None
     category: str | None = None
     pickup_time: str | None = None
+    image_url: str | None = None
 
 
 class StoreResponse(StoreBase):

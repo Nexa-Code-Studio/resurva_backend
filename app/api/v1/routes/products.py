@@ -30,6 +30,7 @@ async def list_products(
     store_id: uuid.UUID | None = None,
     sort_by: str | None = None,
     sort_order: str = "asc",
+    flash_sale: bool = False,
     db: AsyncSession = Depends(get_db_session)
 ):
     """Retrieve multiple products with pagination."""
@@ -39,7 +40,8 @@ async def list_products(
         page_size=page_size,
         store_id=store_id,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
+        flash_sale=flash_sale
     )
     total_pages = (total + page_size - 1) // page_size if total > 0 else 0
     return PaginatedResponse(

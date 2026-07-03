@@ -31,6 +31,8 @@ class Product(Base, IdMixin, CreatedAtMixin):
     product_type: Mapped[ProductType] = mapped_column(SQLEnum(ProductType), nullable=False)
     expired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sold: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    expiry_time: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
 
     # Relationships
     store: Mapped["Store"] = relationship("Store", back_populates="products")
