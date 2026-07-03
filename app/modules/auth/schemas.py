@@ -13,3 +13,8 @@ class TokenResponse(BaseModel):
 class LoginRequest(BaseModel):
     username_or_email: str
     password: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+

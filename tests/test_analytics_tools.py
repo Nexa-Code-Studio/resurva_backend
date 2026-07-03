@@ -22,7 +22,7 @@ from app.modules.chat.models import Conversation, ChatMessage, ToolCall, ChatMem
 
 from app.db.session import SessionLocal, engine
 from app.core.redis import redis_pool
-from app.core.enums import UserRole, OrderStatus, ProductType, PaymentMethod, TransactionStatus, ExpiryAlertStatus
+from app.core.enums import UserRole, OrderStatus, ProductType, PaymentMethod, TransactionStatus, ExpiryAlertStatus, WalletTransactionType
 from app.mcp.orchestrator import MCPOrchestrator
 
 
@@ -657,7 +657,6 @@ async def test_upgraded_mcp_tools():
         # ----------------------------------------------------
         # TEST 2: check_wallet with transaction_type & status
         # ----------------------------------------------------
-        from app.core.enums import WalletTransactionType
         res_wallet = await MCPOrchestrator.execute_tool(
             db=db,
             role=UserRole.SELLER,

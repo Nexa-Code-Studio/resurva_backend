@@ -11,6 +11,7 @@ class UserBase(BaseModel):
     email: EmailStr
     role: UserRole = UserRole.CUSTOMER
     business_id: uuid.UUID | None = None
+    store_id: uuid.UUID | None = None
 
 
 class UserCreate(UserBase):
