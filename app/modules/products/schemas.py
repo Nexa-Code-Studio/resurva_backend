@@ -36,5 +36,6 @@ class ProductResponse(ProductBase):
     id: uuid.UUID
     sold: int
     created_at: datetime
+    store_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

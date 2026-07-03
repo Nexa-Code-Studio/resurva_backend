@@ -22,6 +22,17 @@ async def get_me(
     return UserResponse.model_validate(current_user)
 
 
+@router.get("/me/sustainability")
+async def get_my_sustainability_stats(
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Retrieve sustainability statistics for the current user."""
+    from app.modules.carbon.service.carbon_service import CarbonService
+    service = CarbonService(db)
+    return await service.get_user_sustainability_stats(current_user.id)
+
+
 @router.get("/", response_model=PaginatedResponse[UserResponse])
 async def list_users(
     page: int = 1,

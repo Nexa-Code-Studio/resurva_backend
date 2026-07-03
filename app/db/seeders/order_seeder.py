@@ -446,7 +446,13 @@ class OrderSeeder:
 
         monthly_summary_list = []
         for (st_id, yr, mn), m_val in monthly_summaries_data.items():
-            st_rating = 4.8 if st_id == store_ids[0] else (4.5 if st_id == store_ids[1] else 4.6)
+            # Dynamic rating lookup — find store index, fallback to 4.5
+            if st_id in store_ids:
+                store_idx = store_ids.index(st_id)
+                default_ratings = [4.8, 4.5, 4.6]
+                st_rating = default_ratings[store_idx] if store_idx < len(default_ratings) else 4.5
+            else:
+                st_rating = 4.5
             monthly_summary_list.append({
                 "id": uuid.uuid4(),
                 "store_id": st_id,

@@ -32,6 +32,8 @@ class Store(Base, IdMixin, CreatedAtMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    pickup_time: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Relationships
     business: Mapped["Business"] = relationship("Business", back_populates="stores")

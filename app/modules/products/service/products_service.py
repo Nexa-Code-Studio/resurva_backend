@@ -3,6 +3,8 @@ from collections.abc import Sequence
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy import select
 
 from app.modules.products.models import Product
 from app.modules.products.repository import ProductRepository
@@ -14,7 +16,12 @@ class ProductService:
         self.repository = ProductRepository(db)
 
     async def get_product(self, product_id: uuid.UUID) -> Product | None:
-        return await self.repository.get_by_id(product_id)
+        result = await self.repository.db.execute(
+            select(Product)
+            .filter(Product.id == product_id)
+            .options(selectinload(Product.store))
+        )
+        return result.scalar_one_or_none()
 
     async def list_products(self, skip: int = 0, limit: int = 100) -> Sequence[Product]:
         return await self.repository.get_multi(skip=skip, limit=limit)
@@ -35,7 +42,8 @@ class ProductService:
             page_size=page_size,
             filters=filters,
             sort_by=sort_by,
-            sort_order=sort_order
+            sort_order=sort_order,
+            options=[selectinload(Product.store)]
         )
 
 

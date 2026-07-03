@@ -34,6 +34,12 @@ class Product(Base, IdMixin, CreatedAtMixin):
 
     # Relationships
     store: Mapped["Store"] = relationship("Store", back_populates="products")
+
+    @property
+    def store_name(self) -> str | None:
+        if "store" in self.__dict__ and self.store is not None:
+            return self.store.name
+        return None
     product_ingredients: Mapped[list["ProductIngredient"]] = relationship("ProductIngredient", back_populates="product", cascade="all, delete-orphan")
     inventory_batches: Mapped[list["InventoryBatch"]] = relationship("InventoryBatch", back_populates="product", cascade="all, delete-orphan")
     expiry_alerts: Mapped[list["ExpiryAlert"]] = relationship("ExpiryAlert", back_populates="product", cascade="all, delete-orphan")
