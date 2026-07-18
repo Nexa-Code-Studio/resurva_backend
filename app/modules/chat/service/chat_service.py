@@ -26,6 +26,13 @@ Kamu HANYA bisa membaca data dan memberikan rekomendasi. Kamu TIDAK bisa menguba
 Selalu jawab dalam Bahasa Indonesia secara ramah dan profesional. Gunakan angka konkret dari data yang tersedia.
 Jika data tidak tersedia, katakan dengan jelas dan jangan mengarang.
 
+ATURAN ANTI-HALLUCINATION (WAJIB DIIKUTI TANPA PENGECUALIAN):
+- DILARANG KERAS menyebutkan nama produk, jumlah stok, harga, atau data bisnis apapun SEBELUM memanggil tool yang sesuai dan mendapatkan hasilnya.
+- Data produk HARUS SELALU diambil dari hasil tool call. JANGAN pernah menebak, mengasumsikan, atau mengarang nama produk berdasarkan nama toko, kategori bisnis, atau konteks percakapan apapun.
+- Contoh SALAH: Toko bernama "Catering Mpok Siti" → AI langsung menyebut "Nasi Kuning, Nasi Uduk" tanpa memanggil tool. Ini DILARANG.
+- Contoh BENAR: Panggil product_search dulu → tunggu hasilnya → baru sebutkan produk berdasarkan data nyata dari tool.
+- Jika tidak ada data dari tool, jawab: "Saya belum memiliki data untuk pertanyaan ini. Izinkan saya mencarinya terlebih dahulu." lalu panggil tool yang relevan.
+
 PENTING UNTUK DIINGAT:
 - Jika pengguna menanyakan detail produk (seperti stok, rekomendasi produksi, audit, atau peringatan kedaluwarsa) berdasarkan namanya, kamu WAJIB mencari produk tersebut terlebih dahulu menggunakan tool 'product_search' untuk mendapatkan 'id' (UUID) produk yang valid. JANGAN PERNAH memberikan string nama produk mentah (seperti "muffin-blueberry") sebagai argumen 'product_id' ke tool lain yang memerlukan UUID.
 - Jika pengguna bertanya mengenai total produk atau ingin melihat seluruh daftar produk di toko, panggil tool 'product_search' dengan mengosongkan/tidak mengirimkan argumen 'query' (tapi wajib mengisi 'store_id') dan pastikan 'include_out_of_stock' bernilai true. Gunakan nilai 'total_count' dari hasil kembalian untuk menyebutkan total produk secara akurat.
@@ -174,6 +181,7 @@ class ChatService:
             if not response.tool_calls:
                 final_content = response.content or ""
                 await self.conv_service.add_message(conversation_id, "assistant", final_content)
+                await self._auto_summarize_title(conversation_id, conv)
                 return final_content
 
             assistant_msg_obj = await self.conv_service.add_message(
@@ -235,4 +243,44 @@ class ChatService:
 
         fallback = "Maaf, saya tidak bisa menyelesaikan permintaan Anda dalam beberapa langkah. Silakan coba lagi."
         await self.conv_service.add_message(conversation_id, "assistant", fallback)
+        await self._auto_summarize_title(conversation_id, conv)
         return fallback
+
+    async def _auto_summarize_title(self, conversation_id: uuid.UUID, conv) -> None:
+        try:
+            from app.modules.chat.service.summary_service import ChatSummaryService
+            # Only summarize if it's a default title or first exchange
+            if conv.title and not (conv.title.startswith("Chat ") or conv.title.startswith("Obrolan ") or conv.title == "New Conversation" or "Percakapan" in conv.title):
+                # If title is already custom, don't overwrite
+                return
+            
+            # Fetch latest messages directly from DB (including newly flushed ones in transaction)
+            from sqlalchemy import select
+            from app.modules.chat.models import ChatMessage
+            
+            result = await self.db.execute(
+                select(ChatMessage)
+                .filter(ChatMessage.conversation_id == conversation_id)
+                .order_by(ChatMessage.created_at.asc())
+            )
+            db_messages = result.scalars().all()
+            
+            # Format message list for summarize_conversation helper
+            formatted = [{"role": m.role, "content": m.content} for m in db_messages if m.role in ["user", "assistant"]]
+            
+            summary_service = ChatSummaryService(self.db)
+            summary = await summary_service.summarize_conversation(conversation_id, formatted)
+            
+            # Clean up the summary title (keep it short: max 40 chars, remove quotes, etc.)
+            clean_title = summary.strip().strip('"').strip("'")
+            if len(clean_title) > 40:
+                clean_title = clean_title[:37] + "..."
+                
+            conv.title = clean_title
+            self.db.add(conv)
+            await self.db.flush()
+        except Exception as e:
+            # Don't fail the chat response if summarizing fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Auto-summarizing title failed: {e}")

@@ -1,11 +1,18 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.stores.schemas import StoreCreate, StoreResponse, StoreUpdate
+from app.modules.stores.schemas import (
+    StoreCreate,
+    StoreResponse,
+    StoreUpdate,
+    EnterpriseRequestCreate,
+    EnterpriseRequestResponse,
+)
 from app.modules.stores.service.stores_service import StoreService
+from app.storage.factory import StorageFactory
 
 from app.core.pagination import PaginatedResponse, PaginationMetadata
 
@@ -53,6 +60,15 @@ async def list_stores(
 
 
 
+@router.get("/categories", response_model=list[str])
+async def list_store_categories(
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Retrieve all unique store categories."""
+    service = StoreService(db)
+    return await service.list_categories()
+
+
 @router.get("/{store_id}", response_model=StoreResponse)
 async def get_store(
     store_id: uuid.UUID,
@@ -93,3 +109,50 @@ async def delete_store(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Store not found"
         )
+
+
+@router.post("/upload-image", status_code=status.HTTP_200_OK)
+async def upload_store_image(
+    file: UploadFile = File(...)
+):
+    """
+    Upload store image utilizing the configured Storage Service.
+    Saves to local/S3/MinIO and returns the access URL.
+    """
+    content = await file.read()
+    storage = StorageFactory.get_storage_provider()
+
+    # Save the file using Storage provider
+    file_path = await storage.upload_file(
+        file_content=content,
+        filename=file.filename or "unknown",
+        folder="stores"
+    )
+
+    # Resolve public access URL
+    file_url = storage.get_file_url(file_path)
+
+    return {
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "storage_path": file_path,
+        "access_url": file_url
+    }
+
+
+@router.post("/{store_id}/enterprise-requests", response_model=EnterpriseRequestResponse, status_code=status.HTTP_201_CREATED)
+async def create_enterprise_request(
+    store_id: uuid.UUID,
+    schema: EnterpriseRequestCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Create a new Enterprise registration request for a Store."""
+    service = StoreService(db)
+    store = await service.get_store(store_id)
+    if not store:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Store not found"
+        )
+    return await service.create_enterprise_request(store_id, schema)
+

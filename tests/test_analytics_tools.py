@@ -22,7 +22,7 @@ from app.modules.chat.models import Conversation, ChatMessage, ToolCall, ChatMem
 
 from app.db.session import SessionLocal, engine
 from app.core.redis import redis_pool
-from app.core.enums import UserRole, OrderStatus, ProductType, PaymentMethod, TransactionStatus, ExpiryAlertStatus, WalletTransactionType
+from app.core.enums import UserRole, OrderStatus, ProductType, PaymentMethod, TransactionStatus, ExpiryAlertStatus, WalletTransactionType, WalletType, WalletTransactionCategory
 from app.mcp.orchestrator import MCPOrchestrator
 
 
@@ -528,7 +528,7 @@ async def test_upgraded_mcp_tools():
         await db.commit()
 
         # 4. Setup Wallet & Transactions
-        wallet = Wallet(store_id=store.id, balance=1000000)
+        wallet = Wallet(store_id=store.id, type=WalletType.DIGITAL, balance=1000000)
         db.add(wallet)
         await db.commit()
         await db.refresh(wallet)
@@ -538,8 +538,8 @@ async def test_upgraded_mcp_tools():
             user_id=customer.id,
             store_id=store.id,
             total_price=20000,
-            total_discount=0,
-            final_price=20000,
+            total_discount=2000,
+            final_price=18000,
             status=OrderStatus.COMPLETED,
             created_at=datetime.now(timezone.utc)
         )
@@ -567,6 +567,7 @@ async def test_upgraded_mcp_tools():
             wallet_id=wallet.id,
             transaction_id=tx_success.id,
             type=WalletTransactionType.CREDIT,
+            category=WalletTransactionCategory.CAT_SALES,
             amount=18000,
             balance_after=1018000,
             note="Kredit Penjualan",
@@ -592,6 +593,7 @@ async def test_upgraded_mcp_tools():
             wallet_id=wallet.id,
             transaction_id=tx_withdrawal.id,
             type=WalletTransactionType.WITHDRAWAL,
+            category=WalletTransactionCategory.CAT_WITHDRAWAL,
             amount=-50000,
             balance_after=968000,
             note="Withdrawal to Bank",

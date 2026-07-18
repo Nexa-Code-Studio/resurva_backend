@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,12 +29,14 @@ class InventoryBatch(Base, IdMixin, CreatedAtMixin):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     remaining_quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     expired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    available_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    surplus_starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    batch_tag: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationships
     product: Mapped["Product"] = relationship("Product", back_populates="inventory_batches")
     store: Mapped["Store"] = relationship("Store", back_populates="inventory_batches")
     order_item_batches: Mapped[list["OrderItemBatch"]] = relationship("OrderItemBatch", back_populates="inventory_batch")
+    stock_transactions: Mapped[list["InventoryTransaction"]] = relationship("InventoryTransaction", back_populates="inventory_batch")
 
 
 class ExpiryAlert(Base, IdMixin):
@@ -59,3 +61,32 @@ class ExpiryAlert(Base, IdMixin):
     # Relationships
     product: Mapped["Product"] = relationship("Product", back_populates="expiry_alerts")
     store: Mapped["Store"] = relationship("Store", back_populates="expiry_alerts")
+
+
+class InventoryTransaction(Base, IdMixin, CreatedAtMixin):
+    """Records each stock movement (in/out/adjustment) for a product batch."""
+    __tablename__ = "inventory_transactions"
+
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    inventory_batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("inventory_batches.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    batch_tag: Mapped[str | None] = mapped_column(String, nullable=True)
+    # type: "stock_in", "stock_out", "adjustment", "expired", "sold"
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    reference: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Relationships
+    product: Mapped["Product"] = relationship("Product")
+    store: Mapped["Store"] = relationship("Store")
+    inventory_batch: Mapped["InventoryBatch | None"] = relationship("InventoryBatch", back_populates="stock_transactions")

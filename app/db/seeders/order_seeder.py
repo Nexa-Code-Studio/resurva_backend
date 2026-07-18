@@ -14,6 +14,7 @@ from app.core.enums import (
     ProductType,
     TransactionStatus,
     WalletTransactionType,
+    WalletTransactionCategory,
 )
 from app.modules.orders.models import Order, OrderDiscount, OrderItem, OrderItemBatch
 from app.modules.inventory.models import ExpiryAlert, InventoryBatch
@@ -107,6 +108,7 @@ class OrderSeeder:
         total_orders_generated = 0
         current_month = start_date.month
         curr_date = start_date
+        day_store_order_tracker = {}
 
         local_random = random.Random(42)
 
@@ -243,6 +245,16 @@ class OrderSeeder:
                 channel = OrderChannel.MARKETPLACE if local_random.random() < 0.85 else OrderChannel.KASIR
                 pm = local_random.choice(payment_choices)
 
+                # Generate daily_code
+                order_day = curr_date
+                tracker_key = (order_day, store_id)
+                current_seq = day_store_order_tracker.get(tracker_key, 0) + 1
+                day_store_order_tracker[tracker_key] = current_seq
+
+                weekday = order_day.weekday() # 0 = Monday, 6 = Sunday
+                prefix = chr(ord('A') + weekday)
+                daily_code = f"{prefix}-{current_seq}"
+
                 orders_chunk.append({
                     "id": order_id,
                     "user_id": cust_id,
@@ -252,7 +264,8 @@ class OrderSeeder:
                     "final_price": final_price,
                     "status": status,
                     "channel": channel,
-                    "created_at": order_time
+                    "created_at": order_time,
+                    "daily_code": daily_code
                 })
 
                 if disc_applied and total_discount > 0:
@@ -281,6 +294,35 @@ class OrderSeeder:
                 platform_fee = int(final_price * 0.1)
                 net_amount = final_price - platform_fee
 
+                payment_details = None
+                if pm != PaymentMethod.CASH:
+                    cust_name = local_random.choice([
+                        "BUDI SANTOSO", "DEWI LESTARI", "RIAN HIDAYAT", "SITI AMINAH",
+                        "AHMAD FAUZI", "ADITYA PRATAMA", "INDAH PERMATA", "YUSUF WIJAYA"
+                    ])
+                    if pm == PaymentMethod.TRANSFER:
+                        payment_details = {
+                            "payment_method": "Bank Transfer (Virtual Account)",
+                            "provider_bank": local_random.choice(["BCA", "MANDIRI", "BRI", "BNI"]),
+                            "account_number": "".join(local_random.choices("0123456789", k=10)),
+                            "sender_name": cust_name,
+                            "xendit_payment_id": f"va_pay_{str(uuid.uuid4())[:8]}"
+                        }
+                    elif pm == PaymentMethod.QRIS:
+                        payment_details = {
+                            "payment_method": "QRIS",
+                            "acquirer": local_random.choice(["ShopeePay", "LinkAja", "Dana", "GPN"]),
+                            "sender_name": cust_name,
+                            "xendit_payment_id": f"qris_pay_{str(uuid.uuid4())[:8]}"
+                        }
+                    else: # E-Wallet: GOPAY, OVO
+                        payment_details = {
+                            "payment_method": f"E-Wallet ({pm.value})",
+                            "provider": pm.value,
+                            "sender_phone": "+62812*****" + "".join(local_random.choices("0123456789", k=3)),
+                            "xendit_payment_id": f"ewallet_pay_{str(uuid.uuid4())[:8]}"
+                        }
+
                 transactions_chunk.append({
                     "id": t_id,
                     "order_id": order_id,
@@ -291,6 +333,7 @@ class OrderSeeder:
                     "payment_method": pm,
                     "status": t_status,
                     "paid_at": order_time if t_status == TransactionStatus.SUCCESS else None,
+                    "payment_details": payment_details,
                     "created_at": order_time
                 })
 
@@ -304,9 +347,11 @@ class OrderSeeder:
                         "wallet_id": wallet_id,
                         "transaction_id": t_id,
                         "type": WalletTransactionType.CREDIT,
+                        "category": WalletTransactionCategory.CAT_SALES,
                         "amount": net_amount,
                         "balance_after": store_balances[store_id],
                         "note": f"Kredit Penjualan Order #{str(order_id)[:8].upper()}",
+                        "transaction_date": order_time,
                         "created_at": order_time
                     })
 

@@ -30,6 +30,7 @@ async def list_orders(
     page: int = 1,
     page_size: int = 20,
     store_id: uuid.UUID | None = None,
+    status: str | None = None,
     sort_by: str | None = None,
     sort_order: str = "asc",
     db: AsyncSession = Depends(get_db_session)
@@ -40,6 +41,7 @@ async def list_orders(
         page=page,
         page_size=page_size,
         store_id=store_id,
+        status=status,
         sort_by=sort_by,
         sort_order=sort_order
     )

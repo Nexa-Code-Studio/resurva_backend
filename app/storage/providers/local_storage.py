@@ -44,6 +44,7 @@ class LocalStorageProvider(StorageProvider):
             return True
         return False
 
-    async def get_file_url(self, file_path: str) -> str:
+    def get_file_url(self, file_path: str) -> str:
         # Returns simple relative path; in production could append host url prefix
         return f"/{file_path}"
+

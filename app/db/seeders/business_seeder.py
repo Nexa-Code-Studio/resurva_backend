@@ -5,7 +5,8 @@ import random
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.business.models import Business
-from app.modules.stores.models import Store
+from app.modules.stores.models import Store, StoreCategory
+from app.core.enums import WalletType
 from app.modules.wallets.models import Wallet
 
 logger = logging.getLogger("app.db.seeders.business")
@@ -62,6 +63,14 @@ class BusinessSeeder:
         categories = ["Warung Makan", "Bakeri & Pastry", "Healthy Food", "Supermarket", "Coffee Shop"]
         pickup_windows = ["17:00 - 19:00 WIB", "16:00 - 18:00 WIB", "18:00 - 20:00 WIB", "19:00 - 21:00 WIB"]
 
+        # Setup categories in database first
+        cat_map = {}
+        for cat_name in categories:
+            cat_obj = StoreCategory(name=cat_name)
+            session.add(cat_obj)
+            cat_map[cat_name] = cat_obj
+        await session.flush()
+
         for b_idx, (b_name, b_email, b_phone) in enumerate(business_configs):
             b_id = uuid.uuid4()
             b_ids.append(b_id)
@@ -88,6 +97,8 @@ class BusinessSeeder:
                 img_num = (s_idx % 8) + 1
                 image_url = f"/uploads/stores/{img_num}.png"
 
+                import json
+                default_categories = ["Bakery", "Makanan Berat", "Minuman", "Makanan Kemasan", "Produk Segar", "Lainnya"]
                 store = Store(
                     id=s_id,
                     business_id=b_id,
@@ -98,18 +109,26 @@ class BusinessSeeder:
                     is_active=True,
                     longitude=_rand_lng(),
                     latitude=_rand_lat(),
-                    category=cat,
+                    store_category=cat_map[cat],
                     pickup_time=p_win,
-                    image_url=image_url
+                    image_url=image_url,
+                    categories_data=json.dumps(default_categories)
                 )
                 session.add(store)
 
-                wallet = Wallet(
+                digital_wallet = Wallet(
                     id=w_id,
                     store_id=s_id,
+                    type=WalletType.DIGITAL,
                     balance=0
                 )
-                session.add(wallet)
+                offline_wallet = Wallet(
+                    id=uuid.uuid4(),
+                    store_id=s_id,
+                    type=WalletType.OFFLINE,
+                    balance=0
+                )
+                session.add_all([digital_wallet, offline_wallet])
 
         await session.flush()
         logger.info(f"Successfully seeded {len(b_ids)} businesses, {len(s_ids)} stores, and wallets.")

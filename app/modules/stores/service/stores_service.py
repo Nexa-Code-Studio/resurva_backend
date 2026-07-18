@@ -4,9 +4,9 @@ from collections.abc import Sequence
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.stores.models import Store
+from app.modules.stores.models import Store, EnterpriseRequest, StoreCategory
 from app.modules.stores.repository import StoreRepository
-from app.modules.stores.schemas import StoreCreate, StoreUpdate
+from app.modules.stores.schemas import StoreCreate, StoreUpdate, EnterpriseRequestCreate
 from app.modules.wallets.models import Wallet
 
 
@@ -14,6 +14,34 @@ class StoreService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.repository = StoreRepository(db)
+
+    async def _resolve_category_id(self, category_name: str | None) -> uuid.UUID | None:
+        if not category_name:
+            return None
+        from sqlalchemy import select, func
+        # Check if the category exists (case-insensitive)
+        result = await self.db.execute(
+            select(StoreCategory).filter(func.lower(StoreCategory.name) == func.lower(category_name))
+        )
+        cat = result.scalar_one_or_none()
+        if not cat:
+            # Create a new category if it doesn't exist
+            cat = StoreCategory(name=category_name)
+            self.db.add(cat)
+            await self.db.flush()
+        return cat.id
+
+    async def list_categories(self) -> list[str]:
+        from sqlalchemy import select
+        result = await self.db.execute(select(StoreCategory.name).order_by(StoreCategory.name.asc()))
+        names = [row[0] for row in result.all()]
+        if not names:
+            default_categories = ["Bakery", "Resto", "Cafe", "Supermarket", "Catering", "Lainnya"]
+            for name in default_categories:
+                self.db.add(StoreCategory(name=name))
+            await self.db.flush()
+            names = default_categories
+        return names
 
     async def _populate_store_stats(self, stores: list[Store]) -> None:
         if not stores:
@@ -76,13 +104,28 @@ class StoreService:
             store.eco_impact_co2 = round(co2_map.get(store.id, 0.0), 1)
 
     async def get_store(self, store_id: uuid.UUID) -> Store | None:
-        store = await self.repository.get_by_id(store_id)
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import select
+        result = await self.db.execute(
+            select(Store)
+            .filter(Store.id == store_id)
+            .options(selectinload(Store.business), selectinload(Store.store_category))
+        )
+        store = result.scalar_one_or_none()
         if store:
             await self._populate_store_stats([store])
         return store
 
     async def list_stores(self, skip: int = 0, limit: int = 100) -> Sequence[Store]:
-        stores = await self.repository.get_multi(skip=skip, limit=limit)
+        from sqlalchemy.orm import selectinload
+        from sqlalchemy import select
+        result = await self.db.execute(
+            select(Store)
+            .options(selectinload(Store.business), selectinload(Store.store_category))
+            .offset(skip)
+            .limit(limit)
+        )
+        stores = result.scalars().all()
         await self._populate_store_stats(list(stores))
         return stores
 
@@ -97,12 +140,14 @@ class StoreService:
         filters = {}
         if business_id is not None:
             filters["business_id"] = business_id
+        from sqlalchemy.orm import selectinload
         items, total = await self.repository.get_paginated(
             page=page,
             page_size=page_size,
             filters=filters,
             sort_by=sort_by,
-            sort_order=sort_order
+            sort_order=sort_order,
+            options=[selectinload(Store.business), selectinload(Store.store_category)]
         )
         await self._populate_store_stats(list(items))
         return items, total
@@ -111,26 +156,45 @@ class StoreService:
     async def create_store(self, schema: StoreCreate) -> Store:
         # Create store
         store_data = schema.model_dump()
+        category_name = store_data.pop("category", None)
+        store_data["category_id"] = await self._resolve_category_id(category_name)
         store = await self.repository.create(store_data)
 
-        # Initialize Wallet for the Store
-        # Note: According to the architecture rules, services must use repositories.
-        # So we add the wallet to session here.
-        wallet = Wallet(store_id=store.id, balance=0)
-        self.db.add(wallet)
+        # Initialize Wallets for the Store (Digital and Offline)
+        from app.core.enums import WalletType
+        digital_wallet = Wallet(store_id=store.id, type=WalletType.DIGITAL, balance=0)
+        offline_wallet = Wallet(store_id=store.id, type=WalletType.OFFLINE, balance=0)
+        self.db.add_all([digital_wallet, offline_wallet])
         await self.db.flush()
 
-        return store
+        return await self.get_store(store.id)
 
     async def update_store(self, store_id: uuid.UUID, schema: StoreUpdate) -> Store:
-        store = await self.repository.get_by_id(store_id)
+        store = await self.get_store(store_id)
         if not store:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Store not found"
             )
         store_data = schema.model_dump(exclude_unset=True)
-        return await self.repository.update(store, store_data)
+        if "category" in store_data:
+            category_name = store_data.pop("category")
+            store_data["category_id"] = await self._resolve_category_id(category_name)
+        await self.repository.update(store, store_data)
+        return await self.get_store(store_id)
 
     async def delete_store(self, store_id: uuid.UUID) -> bool:
         return await self.repository.delete(store_id)
+
+    async def create_enterprise_request(
+        self,
+        store_id: uuid.UUID,
+        schema: EnterpriseRequestCreate
+    ) -> EnterpriseRequest:
+        req_data = schema.model_dump()
+        req_data["store_id"] = store_id
+        req = EnterpriseRequest(**req_data)
+        self.db.add(req)
+        await self.db.flush()
+        return req
+

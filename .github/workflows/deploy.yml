@@ -1,0 +1,293 @@
+name: Deploy Resurva Backend
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # JOB 1: Test
+  # ─────────────────────────────────────────────────────────────
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resurva_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        env:
+          DEBUG: "false"
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: resurva_test
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/resurva_test
+          JWT_SECRET_KEY: "ci-test-secret-key-not-used-in-production"
+          JWT_ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 30
+          REFRESH_TOKEN_EXPIRE_DAYS: 7
+          STORAGE_PROVIDER: local
+          LOCAL_STORAGE_PATH: uploads
+          AI_PROVIDER: deepseek
+          AI_MODEL_NAME: deepseek-chat
+        run: |
+          pytest tests/ -v --tb=short 2>&1 | tee /tmp/pytest_output.txt
+          echo "PYTEST_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 2: Deploy (hanya jika test lulus)
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: test
+    environment: production
+
+    steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
+
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known_hosts
+        run: ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        id: deploy_step
+        run: |
+          DEPLOY_LOG=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH' 2>&1
+            set -e
+
+            echo "--- Masuk ke direktori project ---"
+            cd /var/www/resurva/resurva_backend
+
+            echo "--- Git pull latest changes ---"
+            git pull origin main
+
+            echo "--- Install/update dependencies ---"
+            .venv/bin/pip install -r requirements.txt --quiet
+
+            echo "--- Jalankan Alembic migration ---"
+            .venv/bin/alembic upgrade head
+
+            echo "--- Restart service resurva ---"
+            sudo systemctl restart resurva
+
+            sleep 3
+
+            echo "--- Verifikasi service ---"
+            sudo systemctl is-active resurva
+          ENDSSH
+          )
+
+          echo "deploy_log<<EOF" >> $GITHUB_OUTPUT
+          echo "$DEPLOY_LOG" | tail -20 >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Calculate duration
+        id: duration
+        if: always()
+        run: |
+          END=$(date +%s)
+          START=${{ steps.timer.outputs.start }}
+          DIFF=$((END - START))
+          echo "value=${DIFF}s" >> $GITHUB_OUTPUT
+
+      # ── Notifikasi Sukses ──────────────────────────────────────
+      - name: Discord Notification — Deploy Success
+        if: success()
+        env:
+          DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1528030528954175621/8bmY2J_yx6zxbZyRuXGi3-ZkrcjcvMWhDJ9yz7YKlW0y1xp5siRUbn6vlgObH5OeZxX5"
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DURATION: ${{ steps.duration.outputs.value }}
+          REPO: ${{ github.repository }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+
+          PAYLOAD=$(jq -n \
+            --arg short_sha "$SHORT_SHA" \
+            --arg commit_msg "$COMMIT_MSG" \
+            --arg actor "$ACTOR" \
+            --arg branch "$BRANCH" \
+            --arg run_url "$RUN_URL" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg duration "$DURATION" \
+            --arg timestamp "$TIMESTAMP" \
+            '{
+              username: "Resurva CI/CD",
+              avatar_url: "https://raw.githubusercontent.com/gilbarbara/logos/main/logos/python.svg",
+              embeds: [{
+                title: "Deploy Berhasil",
+                description: ("> " + $commit_msg),
+                color: 3908956,
+                fields: [
+                  {
+                    name: "Branch",
+                    value: ("`" + $branch + "`"),
+                    inline: true
+                  },
+                  {
+                    name: "Commit",
+                    value: ("[`" + $short_sha + "`](" + $commit_url + ")"),
+                    inline: true
+                  },
+                  {
+                    name: "Duration",
+                    value: ("`" + $duration + "`"),
+                    inline: true
+                  },
+                  {
+                    name: "Deployed by",
+                    value: $actor,
+                    inline: true
+                  },
+                  {
+                    name: "Environment",
+                    value: "`production`",
+                    inline: true
+                  },
+                  {
+                    name: "Log",
+                    value: ("[Lihat detail di GitHub Actions](" + $run_url + ")"),
+                    inline: false
+                  }
+                ],
+                footer: {
+                  text: "Resurva Backend · resurva_backend",
+                  icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                },
+                timestamp: $timestamp
+              }]
+            }')
+
+          curl -s -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
+
+      # ── Notifikasi Gagal ───────────────────────────────────────
+      - name: Discord Notification — Deploy Failed
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1528030528954175621/8bmY2J_yx6zxbZyRuXGi3-ZkrcjcvMWhDJ9yz7YKlW0y1xp5siRUbn6vlgObH5OeZxX5"
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DURATION: ${{ steps.duration.outputs.value }}
+          REPO: ${{ github.repository }}
+          DEPLOY_LOG: ${{ steps.deploy_step.outputs.deploy_log }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+
+          # Truncate log agar tidak melebihi batas Discord (1024 char per field)
+          LOG_SNIPPET=$(echo "$DEPLOY_LOG" | tail -15 | head -c 900)
+          if [ -z "$LOG_SNIPPET" ]; then
+            LOG_SNIPPET="Tidak ada log tersedia. Cek GitHub Actions untuk detail."
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg short_sha "$SHORT_SHA" \
+            --arg commit_msg "$COMMIT_MSG" \
+            --arg actor "$ACTOR" \
+            --arg branch "$BRANCH" \
+            --arg run_url "$RUN_URL" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg duration "$DURATION" \
+            --arg timestamp "$TIMESTAMP" \
+            --arg log_snippet "$LOG_SNIPPET" \
+            '{
+              username: "Resurva CI/CD",
+              avatar_url: "https://raw.githubusercontent.com/gilbarbara/logos/main/logos/python.svg",
+              embeds: [{
+                title: "Deploy Gagal",
+                description: ("> " + $commit_msg),
+                color: 15746887,
+                fields: [
+                  {
+                    name: "Branch",
+                    value: ("`" + $branch + "`"),
+                    inline: true
+                  },
+                  {
+                    name: "Commit",
+                    value: ("[`" + $short_sha + "`](" + $commit_url + ")"),
+                    inline: true
+                  },
+                  {
+                    name: "Duration",
+                    value: ("`" + $duration + "`"),
+                    inline: true
+                  },
+                  {
+                    name: "Triggered by",
+                    value: $actor,
+                    inline: true
+                  },
+                  {
+                    name: "Environment",
+                    value: "`production`",
+                    inline: true
+                  },
+                  {
+                    name: "Log terakhir",
+                    value: ("```\n" + $log_snippet + "\n```"),
+                    inline: false
+                  },
+                  {
+                    name: "Detail lengkap",
+                    value: ("[Buka GitHub Actions](" + $run_url + ")"),
+                    inline: false
+                  }
+                ],
+                footer: {
+                  text: "Resurva Backend · resurva_backend",
+                  icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                },
+                timestamp: $timestamp
+              }]
+            }')
+
+          curl -s -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"

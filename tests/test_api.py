@@ -135,6 +135,9 @@ async def test_complete_flow():
         assert order_data["total_discount"] == 108000  # 3 * (60,000 - 24,000)
         assert order_data["final_price"] == 72000  # 3 * 24,000 discounted
         assert len(order_data["order_items"]) == 1
+        assert "daily_code" in order_data
+        assert order_data["daily_code"] is not None
+        assert "-" in order_data["daily_code"]
 
         # 9. Verify Product stock was reduced
         resp = await ac.get(f"/api/v1/products/{product_id}")
@@ -148,3 +151,35 @@ async def test_complete_flow():
         upload_data = resp.json()
         assert "access_url" in upload_data
         assert upload_data["filename"] == "donut_image.png"
+
+        # 11. Test store update including description, banner_url, and coordinates
+        update_payload = {
+            "description": "Premium store with fresh foods",
+            "banner_url": "http://localhost:8080/uploads/stores/banner.png",
+            "latitude": -7.95,
+            "longitude": 112.62
+        }
+        resp = await ac.put(f"/api/v1/stores/{store_id}", json=update_payload)
+        assert resp.status_code == 200, resp.text
+        updated_data = resp.json()
+        assert updated_data["description"] == "Premium store with fresh foods"
+        assert updated_data["banner_url"] == "http://localhost:8080/uploads/stores/banner.png"
+        assert updated_data["latitude"] == -7.95
+        assert updated_data["longitude"] == 112.62
+
+        # 12. Test creating enterprise request for store
+        req_payload = {
+            "corporate_name": "UMKM Berkah Group",
+            "pic_name": "John Doe",
+            "email": "corp@example.com",
+            "phone": "08123456789"
+        }
+        resp = await ac.post(f"/api/v1/stores/{store_id}/enterprise-requests", json=req_payload)
+        assert resp.status_code == 201, resp.text
+        req_data = resp.json()
+        assert req_data["corporate_name"] == "UMKM Berkah Group"
+        assert req_data["pic_name"] == "John Doe"
+        assert req_data["email"] == "corp@example.com"
+        assert req_data["phone"] == "08123456789"
+        assert req_data["status"] == "PENDING"
+

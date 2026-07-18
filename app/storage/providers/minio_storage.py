@@ -36,7 +36,7 @@ class MinioStorageProvider(StorageProvider):
 
         if not self.client:
             logger.info(f"[MOCK MINIO] Uploading file to minio://{settings.S3_BUCKET_NAME}/{key}")
-            return f"{settings.S3_ENDPOINT_URL or 'http://localhost:9000'}/{settings.S3_BUCKET_NAME}/{key}"
+            return key
 
         try:
             self.client.put_object(
@@ -45,17 +45,18 @@ class MinioStorageProvider(StorageProvider):
                 Body=file_content,
                 ContentType="application/octet-stream"
             )
-            endpoint = (settings.S3_ENDPOINT_URL or "http://localhost:9000").rstrip("/")
-            return f"{endpoint}/{self.bucket_name}/{key}"
+            return key
         except ClientError as e:
             logger.error(f"MinIO upload failed: {e}")
             raise Exception("Failed to upload file to MinIO")
 
     async def delete_file(self, file_path: str) -> bool:
-        # Extract object key
+        # Extract object key (handles both absolute URLs and relative paths)
         endpoint = (settings.S3_ENDPOINT_URL or "http://localhost:9000").rstrip("/")
         prefix = f"{endpoint}/{self.bucket_name}/"
         key = file_path.replace(prefix, "")
+        if key.startswith("/"):
+            key = key[1:]
 
         if not self.client:
             logger.info(f"[MOCK MINIO] Deleting file key: {key}")
@@ -68,5 +69,12 @@ class MinioStorageProvider(StorageProvider):
             logger.error(f"MinIO delete failed: {e}")
             return False
 
-    async def get_file_url(self, file_path: str) -> str:
-        return file_path
+    def get_file_url(self, file_path: str) -> str:
+        if not file_path:
+            return ""
+        if file_path.startswith("http://") or file_path.startswith("https://"):
+            return file_path
+        endpoint = (settings.S3_ENDPOINT_URL or "http://localhost:9000").rstrip("/")
+        clean_path = file_path.lstrip("/")
+        return f"{endpoint}/{self.bucket_name}/{clean_path}"
+

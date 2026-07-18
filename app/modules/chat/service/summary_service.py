@@ -11,18 +11,30 @@ class ChatSummaryService:
 
     async def summarize_conversation(self, conversation_id: uuid.UUID, messages: list) -> str:
         """
-        Summarizes chat messages using the LLM Provider Factory.
+        Summarizes chat messages using the LLM Provider Factory to create a concise title.
         """
         if not messages:
-            return "Empty conversation"
+            return "Percakapan Baru"
 
         text_content = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
-        prompt = f"Please summarize the following chat conversation history:\n\n{text_content}"
+        prompt = f"Buat judul chat singkat (maksimal 4 kata) dalam Bahasa Indonesia untuk riwayat percakapan berikut:\n\n{text_content}"
 
         try:
             llm = AIFactory.get_llm_provider()
-            summary = await llm.generate_response(prompt, system_prompt="You are a summarization bot.")
-            return summary
+            system_prompt = (
+                "Kamu adalah bot pembuat judul percakapan chat. "
+                "Tugasmu adalah membuat judul singkat (maksimal 4 kata) dalam Bahasa Indonesia yang meringkas topik obrolan. "
+                "JANGAN gunakan tanda kutip, jangan gunakan titik di akhir, dan buat sepadat mungkin (contoh: 'Stok Muffin Blueberry' atau 'Analisis Penjualan Toko')."
+            )
+            summary = await llm.generate_response(prompt, system_prompt=system_prompt)
+            # Remove enclosing quotes if any
+            clean_summary = summary.strip().strip('"').strip("'").strip("`").strip(".")
+            return clean_summary
         except Exception:
-            return f"Summary fallback: conversation has {len(messages)} messages"
+            # Simple fallback based on the first user message if available
+            user_msgs = [m for m in messages if m["role"] == "user"]
+            if user_msgs:
+                first_content = user_msgs[0]["content"]
+                return first_content[:25] + "..." if len(first_content) > 25 else first_content
+            return "Percakapan Baru"
 

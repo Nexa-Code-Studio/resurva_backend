@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.products.schemas import ProductCreate, ProductResponse, ProductUpdate
+from app.modules.products.schemas import (
+    ProductCreate, ProductResponse, ProductUpdate,
+    ProductVariantGroupCreate, ProductVariantGroupResponse,
+    ProductVariantGroupUpdate, ProductVariantOptionCreate, ProductVariantOptionResponse,
+)
 from app.modules.products.service.products_service import ProductService
 from app.storage.factory import StorageFactory
 
@@ -72,6 +76,76 @@ async def get_product(
     return product
 
 
+@router.get("/{product_id}/variants", response_model=list[ProductVariantGroupResponse])
+async def list_product_variants(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """List all variant groups (with options) for a product."""
+    service = ProductService(db)
+    return await service.list_variant_groups(product_id)
+
+
+@router.post("/{product_id}/variants", response_model=ProductVariantGroupResponse, status_code=status.HTTP_201_CREATED)
+async def create_variant_group(
+    product_id: uuid.UUID,
+    schema: ProductVariantGroupCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Create a variant group with options for a product."""
+    service = ProductService(db)
+    return await service.create_variant_group(product_id, schema)
+
+
+@router.put("/variants/{group_id}", response_model=ProductVariantGroupResponse)
+async def update_variant_group(
+    group_id: uuid.UUID,
+    schema: ProductVariantGroupUpdate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update a variant group."""
+    service = ProductService(db)
+    group = await service.update_variant_group(group_id, schema)
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant group not found")
+    return group
+
+
+@router.delete("/variants/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_variant_group(
+    group_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Delete a variant group and all its options."""
+    service = ProductService(db)
+    deleted = await service.delete_variant_group(group_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant group not found")
+
+
+@router.post("/variants/{group_id}/options", response_model=ProductVariantOptionResponse, status_code=status.HTTP_201_CREATED)
+async def create_variant_option(
+    group_id: uuid.UUID,
+    schema: ProductVariantOptionCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Add a new option to an existing variant group."""
+    service = ProductService(db)
+    return await service.create_variant_option(group_id, schema)
+
+
+@router.delete("/variants/options/{option_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_variant_option(
+    option_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Delete a variant option."""
+    service = ProductService(db)
+    deleted = await service.delete_variant_option(option_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant option not found")
+
+
 @router.put("/{product_id}", response_model=ProductResponse)
 async def update_product(
     product_id: uuid.UUID,
@@ -117,7 +191,7 @@ async def upload_product_image(
     )
 
     # Resolve public access URL
-    file_url = await storage.get_file_url(file_path)
+    file_url = storage.get_file_url(file_path)
 
     return {
         "filename": file.filename,

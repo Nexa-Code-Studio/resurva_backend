@@ -15,6 +15,7 @@ from app.api.v1.routes import (
     transactions,
     reviews,
     carbon,
+    analytics,
 )
 
 api_router = APIRouter()
@@ -33,4 +34,5 @@ api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])
 api_router.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
 api_router.include_router(reviews.router, prefix="/reviews", tags=["Reviews"])
 api_router.include_router(carbon.router, prefix="/carbon", tags=["Carbon Logs"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 

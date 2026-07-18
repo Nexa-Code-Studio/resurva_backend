@@ -41,6 +41,7 @@ async def clear_database(session) -> None:
         "ingredients",
         "products",
         "users",
+        "store_categories",
         "stores",
         "businesses",
     ]

@@ -60,7 +60,7 @@ class ProductSearchTool(BaseMCPTool):
                     "original_price": p.original_price,
                     "discounted_price": p.discounted_price,
                     "stock": p.stock,
-                    "product_type": p.product_type.value if p.product_type else "other",
+                    "product_type": p.product_type.value if hasattr(p.product_type, 'value') else (p.product_type or "other"),
                     "description": p.description,
                     "confidence": round(confidence, 2)
                 })
