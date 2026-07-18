@@ -20,11 +20,16 @@ class OrderService:
         self.product_repo = ProductRepository(db)
 
     async def get_order(self, order_id: uuid.UUID) -> Order | None:
-        # Fetch order with eager-loaded items to serialize correctly
+        # Fetch order with eager-loaded relations to serialize correctly
         result = await self.db.execute(
             select(Order)
             .filter(Order.id == order_id)
-            .options(selectinload(Order.order_items))
+            .options(
+                selectinload(Order.user),
+                selectinload(Order.transactions),
+                selectinload(Order.order_items).selectinload(OrderItem.product),
+                selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
+            )
         )
         return result.scalar_one_or_none()
 
@@ -33,7 +38,12 @@ class OrderService:
             select(Order)
             .offset(skip)
             .limit(limit)
-            .options(selectinload(Order.order_items))
+            .options(
+                selectinload(Order.user),
+                selectinload(Order.transactions),
+                selectinload(Order.order_items).selectinload(OrderItem.product),
+                selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
+            )
         )
         return result.scalars().all()
 
@@ -42,20 +52,50 @@ class OrderService:
         page: int = 1,
         page_size: int = 20,
         store_id: uuid.UUID | None = None,
+        status: str | None = None,
         sort_by: str | None = None,
         sort_order: str = "asc"
     ) -> tuple[Sequence[Order], int]:
-        filters = {}
-        if store_id is not None:
-            filters["store_id"] = store_id
-        return await self.order_repo.get_paginated(
-            page=page,
-            page_size=page_size,
-            filters=filters,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            options=[selectinload(Order.order_items)]
+        from sqlalchemy import func
+        query = select(Order)
+        
+        # Apply options
+        query = query.options(
+            selectinload(Order.user),
+            selectinload(Order.transactions),
+            selectinload(Order.order_items).selectinload(OrderItem.product),
+            selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
         )
+        
+        # Apply store_id filter
+        if store_id is not None:
+            query = query.where(Order.store_id == store_id)
+            
+        # Apply status filter (comma separated values)
+        if status:
+            status_list = [s.strip().lower() for s in status.split(",") if s.strip()]
+            if status_list:
+                query = query.where(Order.status.in_(status_list))
+                
+        # Sort
+        if sort_by and hasattr(Order, sort_by):
+            col = getattr(Order, sort_by)
+            query = query.order_by(col.desc() if sort_order.lower() == "desc" else col.asc())
+        else:
+            query = query.order_by(Order.created_at.desc())
+            
+        # Count total
+        count_query = select(func.count()).select_from(query.subquery())
+        count_res = await self.db.execute(count_query)
+        total = count_res.scalar() or 0
+        
+        # Offset and limit
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+        
+        res = await self.db.execute(query)
+        items = res.scalars().all()
+        return items, total
 
 
     async def create_order(self, user_id: uuid.UUID, schema: OrderCreate) -> Order:
@@ -99,6 +139,26 @@ class OrderService:
 
         final_price = total_price - total_discount
 
+        # Generate daily code: {weekday_prefix}-{count_today + 1}
+        from datetime import datetime, UTC, time
+        now = datetime.now(UTC)
+        order_day = now.date()
+        weekday = order_day.weekday() # 0 = Monday, 6 = Sunday
+        prefix = chr(ord('A') + weekday)
+
+        start_dt = datetime.combine(order_day, time.min).replace(tzinfo=UTC)
+        end_dt = datetime.combine(order_day, time.max).replace(tzinfo=UTC)
+
+        from sqlalchemy import func
+        count_query = select(func.count(Order.id)).where(
+            Order.store_id == schema.store_id,
+            Order.created_at >= start_dt,
+            Order.created_at <= end_dt
+        )
+        count_res = await self.db.execute(count_query)
+        daily_count = count_res.scalar() or 0
+        daily_code = f"{prefix}-{daily_count + 1}"
+
         # Create main Order
         order = Order(
             user_id=user_id,
@@ -107,7 +167,9 @@ class OrderService:
             total_discount=total_discount,
             final_price=final_price,
             status=OrderStatus.PENDING,
-            channel=schema.channel
+            channel=schema.channel,
+            notes=getattr(schema, "notes", None),
+            daily_code=daily_code
         )
 
         self.db.add(order)

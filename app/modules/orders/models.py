@@ -2,7 +2,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, Integer
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import OrderChannel, OrderStatus
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.modules.transactions.models import Transaction
     from app.modules.users.models import User
     from app.modules.inventory.models import InventoryBatch
+    from app.modules.products.models import ProductVariantOption
 
 
 class Order(Base, IdMixin, CreatedAtMixin):
@@ -34,6 +35,8 @@ class Order(Base, IdMixin, CreatedAtMixin):
     final_price: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[OrderStatus] = mapped_column(SQLEnum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
     channel: Mapped[OrderChannel] = mapped_column(SQLEnum(OrderChannel), default=OrderChannel.MARKETPLACE, nullable=False)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    daily_code: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="orders")
@@ -42,6 +45,25 @@ class Order(Base, IdMixin, CreatedAtMixin):
     order_discounts: Mapped[list["OrderDiscount"]] = relationship("OrderDiscount", back_populates="order", cascade="all, delete-orphan")
     carbon_logs: Mapped[list["CarbonLog"]] = relationship("CarbonLog", back_populates="order", cascade="all, delete-orphan")
     transactions: Mapped[list["Transaction"]] = relationship("Transaction", back_populates="order", cascade="all, delete-orphan")
+
+    @property
+    def customer_name(self) -> str:
+        return self.user.username if self.user else "Customer"
+
+    @property
+    def payment_method(self) -> str:
+        for tx in self.transactions:
+            if tx.status.value == "success":
+                return tx.payment_method.value
+        if self.transactions:
+            return self.transactions[0].payment_method.value
+        return "Tunai"
+
+    @property
+    def order_type(self) -> str:
+        if self.channel.value == "kasir":
+            return "POS Dine-In"
+        return "Online Pickup"
 
 
 class OrderItem(Base, IdMixin):
@@ -63,6 +85,15 @@ class OrderItem(Base, IdMixin):
     order: Mapped["Order"] = relationship("Order", back_populates="order_items")
     product: Mapped["Product"] = relationship("Product", back_populates="order_items")
     order_item_batches: Mapped[list["OrderItemBatch"]] = relationship("OrderItemBatch", back_populates="order_item", cascade="all, delete-orphan")
+    order_item_variant_options: Mapped[list["OrderItemVariantOption"]] = relationship("OrderItemVariantOption", back_populates="order_item", cascade="all, delete-orphan")
+
+    @property
+    def product_name(self) -> str:
+        return self.product.name if self.product else "Unknown Product"
+
+    @property
+    def options(self) -> list[str]:
+        return [opt.name for opt in self.order_item_variant_options] if self.order_item_variant_options else []
 
 
 class OrderDiscount(Base, IdMixin):
@@ -99,3 +130,22 @@ class OrderItemBatch(Base, IdMixin):
     # Relationships
     order_item: Mapped["OrderItem"] = relationship("OrderItem", back_populates="order_item_batches")
     inventory_batch: Mapped["InventoryBatch"] = relationship("InventoryBatch", back_populates="order_item_batches")
+
+
+class OrderItemVariantOption(Base, IdMixin):
+    __tablename__ = "order_item_variant_options"
+
+    order_item_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("order_items.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    variant_option_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("product_variant_options.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    additional_price: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Relationships
+    order_item: Mapped["OrderItem"] = relationship("OrderItem", back_populates="order_item_variant_options")
+    variant_option: Mapped["ProductVariantOption | None"] = relationship("ProductVariantOption")

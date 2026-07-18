@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StoreBase(BaseModel):
@@ -15,6 +15,10 @@ class StoreBase(BaseModel):
     category: str | None = Field(None, description="Store category")
     pickup_time: str | None = Field(None, description="Store pickup window hours")
     image_url: str | None = Field(None, description="Publicly accessible logo or cover image URL")
+    categories_data: str | None = Field(None, description="Serialized store custom categories")
+    description: str | None = Field(None, description="Detailed description of the store")
+    banner_url: str | None = Field(None, description="Publicly accessible banner image URL")
+    is_branch: bool = False
 
 
 class StoreCreate(StoreBase):
@@ -31,6 +35,18 @@ class StoreUpdate(BaseModel):
     category: str | None = None
     pickup_time: str | None = None
     image_url: str | None = None
+    categories_data: str | None = None
+    description: str | None = None
+    banner_url: str | None = None
+    is_branch: bool | None = None
+    business_id: uuid.UUID | None = None
+
+
+class BusinessInfo(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str
+    phone: str | None = None
 
 
 class StoreResponse(StoreBase):
@@ -41,5 +57,39 @@ class StoreResponse(StoreBase):
     total_reviews: int = 0
     eco_impact_saved_meals: int = 0
     eco_impact_co2: float = 0.0
+    business: BusinessInfo | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("image_url", "banner_url", mode="before")
+    @classmethod
+    def resolve_image_url(cls, v: str | None) -> str | None:
+        if not v:
+            return v
+        if v.startswith("http://") or v.startswith("https://"):
+            return v
+        from app.storage.factory import StorageFactory
+        storage = StorageFactory.get_storage_provider()
+        return storage.get_file_url(v)
+
+
+class EnterpriseRequestBase(BaseModel):
+    corporate_name: str
+    pic_name: str
+    email: str
+    phone: str
+
+
+class EnterpriseRequestCreate(EnterpriseRequestBase):
+    pass
+
+
+class EnterpriseRequestResponse(EnterpriseRequestBase):
+    id: uuid.UUID
+    store_id: uuid.UUID
+    status: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+

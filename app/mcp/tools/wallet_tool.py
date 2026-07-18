@@ -6,10 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.mcp.base_tool import BaseMCPTool
 from app.modules.wallets.models import Wallet, WalletTransaction
+from app.core.enums import WalletType
 
 
 class WalletToolInput(BaseModel):
     store_id: str = Field(description="UUID of the store to fetch wallet information for")
+    wallet_type: str = Field("digital", description="Wallet type: 'digital' or 'offline'")
     include_transactions: bool = Field(False, description="Whether to include recent transactions")
     transaction_type: str | None = Field(None, description="Optional filter for transaction type: 'credit', 'debit', 'withdrawal'")
     limit: int = Field(10, description="Maximum number of recent transactions to return")
@@ -24,23 +26,32 @@ class WalletTool(BaseMCPTool):
         self,
         db: AsyncSession,
         store_id: str,
+        wallet_type: str = "digital",
         include_transactions: bool = False,
         transaction_type: str | None = None,
         limit: int = 10
     ) -> dict[str, Any]:
         store_uuid = uuid.UUID(store_id)
+        
+        try:
+            w_type = WalletType(wallet_type.lower())
+        except ValueError:
+            return {"error": f"Tipe dompet '{wallet_type}' tidak valid. Gunakan 'digital' atau 'offline'."}
+
         result = await db.execute(
-            select(Wallet).where(Wallet.store_id == store_uuid)
+            select(Wallet).where(Wallet.store_id == store_uuid, Wallet.type == w_type)
         )
         wallet = result.scalar_one_or_none()
         if not wallet:
             return {
                 "store_id": store_id,
+                "wallet_type": wallet_type,
                 "message": "Wallet belum ada"
             }
 
         data = {
             "store_id": store_id,
+            "wallet_type": wallet_type,
             "balance": wallet.balance,
             "updated_at": wallet.updated_at.isoformat() if wallet.updated_at else None
         }
@@ -70,6 +81,7 @@ class WalletTool(BaseMCPTool):
             data["recent_transactions"] = [
                 {
                     "type": t.type.value,
+                    "category": t.category.value,
                     "amount": t.amount,
                     "balance_after": t.balance_after,
                     "note": t.note,

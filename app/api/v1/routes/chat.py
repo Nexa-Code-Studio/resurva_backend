@@ -9,6 +9,7 @@ from app.modules.chat.schemas import ChatMessageResponse, ConversationCreate, Co
 from app.modules.chat.service.chat_service import ChatService
 from app.modules.chat.service.conversation_service import ConversationService
 from app.modules.users.models import User
+from app.ai.exceptions import AIException
 
 router = APIRouter()
 
@@ -64,8 +65,21 @@ async def send_message(
 ):
     """Send a user message to the AI chatbot and get a response."""
     chat_service = ChatService(db)
-    await chat_service.get_response(user_id=current_user.id, conversation_id=conversation_id, user_message=user_message)
-    await db.commit()
+    try:
+        await chat_service.get_response(user_id=current_user.id, conversation_id=conversation_id, user_message=user_message)
+        await db.commit()
+    except AIException as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"AI Provider Error: {str(e)}"
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Terjadi kesalahan internal: {str(e)}"
+        )
 
     # Retrieve all messages sorted by creation time
     conv_service = ConversationService(db)

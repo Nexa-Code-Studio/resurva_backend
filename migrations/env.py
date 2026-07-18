@@ -17,7 +17,7 @@ from app.db.base import Base
 from app.modules.auth.models import RefreshToken
 from app.modules.business.models import Business
 from app.modules.users.models import User
-from app.modules.stores.models import Store
+from app.modules.stores.models import Store, EnterpriseRequest, StoreCategory
 from app.modules.products.models import Product, Ingredient, ProductIngredient
 from app.modules.inventory.models import InventoryBatch, ExpiryAlert
 from app.modules.reviews.models import Review

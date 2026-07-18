@@ -17,7 +17,8 @@ class StorageProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_file_url(self, file_path: str) -> str:
+    def get_file_url(self, file_path: str) -> str:
+
         """
         Retrieves a public URL or local path for accessing the file.
         """

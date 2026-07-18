@@ -35,7 +35,7 @@ class S3StorageProvider(StorageProvider):
 
         if not self.client:
             logger.info(f"[MOCK S3] Uploading file to s3://{settings.S3_BUCKET_NAME}/{key}")
-            return f"https://s3.amazonaws.com/{settings.S3_BUCKET_NAME}/{key}"
+            return key
 
         try:
             # S3 client upload expects a file-like object or filepath, or we can use put_object
@@ -45,14 +45,17 @@ class S3StorageProvider(StorageProvider):
                 Body=file_content,
                 ContentType="application/octet-stream"
             )
-            return f"https://{self.bucket_name}.s3.amazonaws.com/{key}"
+            return key
         except ClientError as e:
             logger.error(f"S3 upload failed: {e}")
             raise Exception("Failed to upload file to S3")
 
     async def delete_file(self, file_path: str) -> bool:
         # Extract S3 key from URL or path
-        key = file_path.replace(f"https://{self.bucket_name}.s3.amazonaws.com/", "")
+        prefix = f"https://{self.bucket_name}.s3.amazonaws.com/"
+        key = file_path.replace(prefix, "")
+        if key.startswith("/"):
+            key = key[1:]
 
         if not self.client:
             logger.info(f"[MOCK S3] Deleting file key: {key}")
@@ -65,5 +68,11 @@ class S3StorageProvider(StorageProvider):
             logger.error(f"S3 delete failed: {e}")
             return False
 
-    async def get_file_url(self, file_path: str) -> str:
-        return file_path
+    def get_file_url(self, file_path: str) -> str:
+        if not file_path:
+            return ""
+        if file_path.startswith("http://") or file_path.startswith("https://"):
+            return file_path
+        clean_path = file_path.lstrip("/")
+        return f"https://{self.bucket_name}.s3.amazonaws.com/{clean_path}"
+

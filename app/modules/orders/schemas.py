@@ -19,6 +19,8 @@ class OrderItemResponse(OrderItemBase):
     id: uuid.UUID
     unit_price: int
     subtotal: int
+    product_name: str | None = None
+    options: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,6 +32,7 @@ class OrderBase(BaseModel):
 
 class OrderCreate(OrderBase):
     items: list[OrderItemCreate]
+    notes: str | None = None
 
 
 class OrderUpdateStatus(BaseModel):
@@ -45,5 +48,10 @@ class OrderResponse(OrderBase):
     status: OrderStatus
     created_at: datetime
     order_items: list[OrderItemResponse]
+    customer_name: str | None = None
+    payment_method: str | None = None
+    order_type: str | None = None
+    notes: str | None = None
+    daily_code: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
