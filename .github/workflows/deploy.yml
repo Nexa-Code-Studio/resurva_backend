@@ -145,6 +145,7 @@ jobs:
           SHORT_SHA="${COMMIT_SHA:0:7}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+          REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
 
           PAYLOAD=$(jq -n \
             --arg short_sha "$SHORT_SHA" \
@@ -155,11 +156,12 @@ jobs:
             --arg commit_url "$COMMIT_URL" \
             --arg duration "$DURATION" \
             --arg timestamp "$TIMESTAMP" \
+            --arg repo_name "$REPO_NAME" \
             '{
               username: "Resurva CI/CD",
-              avatar_url: "https://raw.githubusercontent.com/gilbarbara/logos/main/logos/python.svg",
+              avatar_url: "http://172.93.219.133:9000/resurva-bucket/assets/kucing_plenger.jpeg",
               embeds: [{
-                title: "Deploy Berhasil",
+                title: ("#" + $repo_name + " Deploy Berhasil"),
                 description: ("> " + $commit_msg),
                 color: 3908956,
                 fields: [
@@ -195,7 +197,7 @@ jobs:
                   }
                 ],
                 footer: {
-                  text: "Resurva Backend · resurva_backend",
+                  text: ("Resurva Backend · " + $repo_name),
                   icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
                 },
                 timestamp: $timestamp
@@ -223,6 +225,7 @@ jobs:
           SHORT_SHA="${COMMIT_SHA:0:7}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+          REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
 
           # Truncate log agar tidak melebihi batas Discord (1024 char per field)
           LOG_SNIPPET=$(echo "$DEPLOY_LOG" | tail -15 | head -c 900)
@@ -240,11 +243,12 @@ jobs:
             --arg duration "$DURATION" \
             --arg timestamp "$TIMESTAMP" \
             --arg log_snippet "$LOG_SNIPPET" \
+            --arg repo_name "$REPO_NAME" \
             '{
               username: "Resurva CI/CD",
-              avatar_url: "https://raw.githubusercontent.com/gilbarbara/logos/main/logos/python.svg",
+              avatar_url: "http://172.93.219.133:9000/resurva-bucket/assets/kucing_plenger.jpeg",
               embeds: [{
-                title: "Deploy Gagal",
+                title: ("#" + $repo_name + " Deploy Gagal"),
                 description: ("> " + $commit_msg),
                 color: 15746887,
                 fields: [
@@ -285,7 +289,7 @@ jobs:
                   }
                 ],
                 footer: {
-                  text: "Resurva Backend · resurva_backend",
+                  text: ("Resurva Backend · " + $repo_name),
                   icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
                 },
                 timestamp: $timestamp
