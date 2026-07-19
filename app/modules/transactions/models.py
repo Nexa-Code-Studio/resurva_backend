@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 
 class Transaction(Base, IdMixin, CreatedAtMixin):
     __tablename__ = "transactions"
+    __table_args__ = (
+        Index("idx_tx_store_status", "store_id", "status"),
+    )
 
     order_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("orders.id", ondelete="CASCADE"),

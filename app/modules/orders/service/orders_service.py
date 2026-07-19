@@ -1,16 +1,27 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime, time
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.enums import OrderStatus
-from app.modules.orders.models import Order, OrderItem
+from app.core.enums import (
+    OrderChannel,
+    OrderStatus,
+    PaymentMethod,
+    TransactionStatus,
+    WalletTransactionCategory,
+    WalletType,
+)
+from app.modules.inventory.models import InventoryBatch, InventoryTransaction
+from app.modules.orders.models import Order, OrderItem, OrderItemBatch
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schemas import OrderCreate
 from app.modules.products.repository import ProductRepository
+from app.modules.transactions.models import Transaction
+from app.modules.wallets.service.wallets_service import WalletService
 
 
 class OrderService:
@@ -29,6 +40,7 @@ class OrderService:
                 selectinload(Order.transactions),
                 selectinload(Order.order_items).selectinload(OrderItem.product),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
+                selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
             )
         )
         return result.scalar_one_or_none()
@@ -43,6 +55,7 @@ class OrderService:
                 selectinload(Order.transactions),
                 selectinload(Order.order_items).selectinload(OrderItem.product),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
+                selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
             )
         )
         return result.scalars().all()
@@ -65,6 +78,7 @@ class OrderService:
             selectinload(Order.transactions),
             selectinload(Order.order_items).selectinload(OrderItem.product),
             selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
+            selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
         )
         
         # Apply store_id filter
@@ -98,12 +112,41 @@ class OrderService:
         return items, total
 
 
+    async def get_available_stock(self, product_id: uuid.UUID, store_id: uuid.UUID) -> int:
+        from datetime import UTC, datetime
+        now = datetime.now(UTC)
+
+        # Check if ANY inventory batches exist for this product and store
+        query_all = select(InventoryBatch).where(
+            InventoryBatch.product_id == product_id,
+            InventoryBatch.store_id == store_id
+        )
+        res_all = await self.db.execute(query_all)
+        all_batches = res_all.scalars().all()
+
+        if all_batches:
+            # If product has inventory batches, available stock is strictly the sum of active non-expired batches
+            active_batches = [b for b in all_batches if b.remaining_quantity > 0 and b.expired_at > now]
+            return sum(b.remaining_quantity for b in active_batches)
+
+        # Fallback to product.stock ONLY if no inventory batches exist in DB for this product
+        product = await self.product_repo.get_by_id(product_id)
+        return product.stock if product else 0
+
     async def create_order(self, user_id: uuid.UUID, schema: OrderCreate) -> Order:
         total_price = 0
         total_discount = 0
-        order_items_to_create = []
+        order_items_to_create: list[tuple[OrderItem, uuid.UUID, int]] = [] # (order_item, product_id, quantity)
 
-        # Validate items and deduct stock
+        # Determine order status
+        if schema.status:
+            order_status = schema.status
+        elif schema.channel == OrderChannel.KASIR:
+            order_status = OrderStatus.COMPLETED
+        else:
+            order_status = OrderStatus.PENDING
+
+        # Validate items, check stock, and calculate prices
         for item in schema.items:
             product = await self.product_repo.get_by_id(item.product_id)
             if not product:
@@ -112,15 +155,12 @@ class OrderService:
                     detail=f"Product with ID {item.product_id} not found"
                 )
 
-            if product.stock < item.quantity:
+            avail_stock = await self.get_available_stock(product.id, schema.store_id)
+            if avail_stock < item.quantity:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Insufficient stock for product '{product.name}'. Available: {product.stock}, requested: {item.quantity}"
+                    detail=f"Stok tidak mencukupi untuk produk '{product.name}'. Stok tersedia: {avail_stock}, diminta: {item.quantity}"
                 )
-
-            # Deduct stock
-            product.stock -= item.quantity
-            self.db.add(product)
 
             # Pricing calculations
             subtotal = product.discounted_price * item.quantity
@@ -135,12 +175,12 @@ class OrderService:
                 unit_price=product.discounted_price,
                 subtotal=subtotal
             )
-            order_items_to_create.append(order_item)
+            order_items_to_create.append((order_item, product.id, item.quantity))
 
         final_price = total_price - total_discount
 
         # Generate daily code: {weekday_prefix}-{count_today + 1}
-        from datetime import datetime, UTC, time
+        from datetime import UTC, datetime, time
         now = datetime.now(UTC)
         order_day = now.date()
         weekday = order_day.weekday() # 0 = Monday, 6 = Sunday
@@ -166,7 +206,7 @@ class OrderService:
             total_price=total_price,
             total_discount=total_discount,
             final_price=final_price,
-            status=OrderStatus.PENDING,
+            status=order_status,
             channel=schema.channel,
             notes=getattr(schema, "notes", None),
             daily_code=daily_code
@@ -175,10 +215,22 @@ class OrderService:
         self.db.add(order)
         await self.db.flush()  # Populate order.id
 
-        # Link order items to order ID
-        for item in order_items_to_create:
-            item.order_id = order.id
-            self.db.add(item)
+        # Link order items
+        for order_item, product_id, qty in order_items_to_create:
+            order_item.order_id = order.id
+            self.db.add(order_item)
+
+        await self.db.flush()
+
+        # If order is immediately COMPLETED or POS, perform batch deduction & financial logging
+        if order_status == OrderStatus.COMPLETED or schema.channel == OrderChannel.KASIR:
+            await self._process_order_deduction_and_finance(
+                order=order,
+                order_items_tuples=order_items_to_create,
+                payment_method=schema.payment_method or PaymentMethod.CASH,
+                payment_details=schema.payment_details,
+                now=now
+            )
 
         await self.db.flush()
         await self.db.commit()
@@ -192,14 +244,163 @@ class OrderService:
             )
         return reloaded_order
 
+    async def _process_order_deduction_and_finance(
+        self,
+        order: Order,
+        order_items_tuples: list[tuple[OrderItem, uuid.UUID, int]],
+        payment_method: PaymentMethod,
+        payment_details: dict | None,
+        now: datetime
+    ):
+        for order_item, product_id, qty in order_items_tuples:
+            product = await self.product_repo.get_by_id(product_id)
+            if product:
+                product.stock = max(0, product.stock - qty)
+                self.db.add(product)
+
+            # Deduct stock from active batches (FIFO order)
+            batch_query = (
+                select(InventoryBatch)
+                .where(
+                    InventoryBatch.product_id == product_id,
+                    InventoryBatch.store_id == order.store_id,
+                    InventoryBatch.remaining_quantity > 0,
+                    InventoryBatch.expired_at > now,
+                )
+                .order_by(InventoryBatch.expired_at.asc())
+            )
+            batch_res = await self.db.execute(batch_query)
+            active_batches = batch_res.scalars().all()
+
+            needed = qty
+            for b in active_batches:
+                if needed <= 0:
+                    break
+                qty_deduct = min(needed, b.remaining_quantity)
+                b.remaining_quantity -= qty_deduct
+                self.db.add(b)
+
+                # OrderItemBatch link
+                oi_batch = OrderItemBatch(
+                    order_item_id=order_item.id,
+                    inventory_batch_id=b.id,
+                    quantity=qty_deduct
+                )
+                self.db.add(oi_batch)
+
+                # InventoryTransaction record
+                inv_tx = InventoryTransaction(
+                    product_id=product_id,
+                    store_id=order.store_id,
+                    inventory_batch_id=b.id,
+                    batch_tag=b.batch_tag,
+                    type="sold",
+                    quantity=-qty_deduct,
+                    reason=f"Penjualan Order #{order.daily_code}",
+                    reference=str(order.id)
+                )
+                self.db.add(inv_tx)
+
+                needed -= qty_deduct
+
+        # Financial Transaction & Wallet logging
+        platform_fee = 0 if order.channel == OrderChannel.KASIR else int(order.final_price * 0.1)
+        net_amount = order.final_price - platform_fee
+
+        transaction_id = uuid.uuid4()
+        transaction = Transaction(
+            id=transaction_id,
+            order_id=order.id,
+            store_id=order.store_id,
+            gross_amount=order.final_price,
+            platform_fee=platform_fee,
+            net_amount=net_amount,
+            payment_method=payment_method,
+            status=TransactionStatus.SUCCESS,
+            paid_at=now,
+            payment_details=payment_details or {"payment_method": payment_method.value}
+        )
+        self.db.add(transaction)
+        await self.db.flush()
+
+        wallet_type = WalletType.OFFLINE if payment_method == PaymentMethod.CASH else WalletType.DIGITAL
+        wallet_service = WalletService(self.db)
+        await wallet_service.add_funds(
+            store_id=order.store_id,
+            amount=net_amount,
+            wallet_type=wallet_type,
+            category=WalletTransactionCategory.CAT_SALES,
+            transaction_id=transaction_id,
+            note=f"Penjualan Order #{order.daily_code}",
+            transaction_date=now
+        )
+
     async def update_order_status(self, order_id: uuid.UUID, new_status: OrderStatus) -> Order:
+        from datetime import UTC, datetime
+        now = datetime.now(UTC)
+
         order = await self.get_order(order_id)
         if not order:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Order not found"
             )
+
+        # Check if order hasn't deducted stock yet and is moving to ACCEPTED / PROCESSING / COMPLETED
+        has_batches = any(len(item.order_item_batches) > 0 for item in order.order_items)
+        is_advancing = new_status in [OrderStatus.ACCEPTED, OrderStatus.PROCESSING, OrderStatus.COMPLETED]
+
+        if is_advancing and not has_batches:
+            # Check stock availability for all items before advancing
+            for item in order.order_items:
+                avail_stock = await self.get_available_stock(item.product_id, order.store_id)
+                if avail_stock < item.quantity:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Stok tidak mencukupi untuk mengonfirmasi pesanan '{item.product_name}'. Stok tersedia: {avail_stock}, dibutuhkan: {item.quantity}"
+                    )
+
+            # Perform FIFO batch deduction and finance logging
+            items_tuples = [(item, item.product_id, item.quantity) for item in order.order_items]
+            pm = PaymentMethod.CASH if order.transactions and order.transactions[0].payment_method == PaymentMethod.CASH else PaymentMethod.QRIS
+            await self._process_order_deduction_and_finance(
+                order=order,
+                order_items_tuples=items_tuples,
+                payment_method=pm,
+                payment_details=None,
+                now=now
+            )
+
+        # If order is CANCELLED and was previously deducted, restore stock to batches
+        elif new_status == OrderStatus.CANCELLED and has_batches:
+            for item in order.order_items:
+                product = await self.product_repo.get_by_id(item.product_id)
+                if product:
+                    product.stock += item.quantity
+                    self.db.add(product)
+
+                for oi_batch in item.order_item_batches:
+                    if oi_batch.inventory_batch:
+                        oi_batch.inventory_batch.remaining_quantity += oi_batch.quantity
+                        self.db.add(oi_batch.inventory_batch)
+
+                        inv_tx = InventoryTransaction(
+                            product_id=item.product_id,
+                            store_id=order.store_id,
+                            inventory_batch_id=oi_batch.inventory_batch_id,
+                            batch_tag=oi_batch.inventory_batch.batch_tag,
+                            type="stock_in",
+                            quantity=oi_batch.quantity,
+                            reason=f"Pembatalan Order #{order.daily_code}",
+                            reference=str(order.id)
+                        )
+                        self.db.add(inv_tx)
+
         order.status = new_status
         self.db.add(order)
         await self.db.flush()
-        return order
+        await self.db.commit()
+
+        # Reload updated order
+        reloaded = await self.get_order(order.id)
+        return reloaded or order

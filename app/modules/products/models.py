@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Boolean
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Boolean
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 
 class Product(Base, IdMixin, CreatedAtMixin):
     __tablename__ = "products"
+    __table_args__ = (
+        Index("idx_product_store_published", "store_id", "is_published"),
+    )
 
     store_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("stores.id", ondelete="CASCADE"),
