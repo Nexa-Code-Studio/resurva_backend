@@ -76,12 +76,14 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: Setup SSH Key
+      - name: Setup SSH Key & Validate
         run: |
           mkdir -p ~/.ssh
           # printf dipakai agar newline di akhir key terjaga dengan benar
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          echo "--- Key Fingerprint: ---"
+          ssh-keygen -l -f ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
