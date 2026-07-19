@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     S3_SECRET_ACCESS_KEY: str | None = None
     S3_REGION_NAME: str | None = "us-east-1"
     S3_ENDPOINT_URL: str | None = None
+    S3_PUBLIC_URL: str | None = "https://storage.resurva.my.id"
 
     # AI Settings
     AI_PROVIDER: str = "openai"  # openai, anthropic, deepseek

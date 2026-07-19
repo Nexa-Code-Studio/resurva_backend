@@ -33,7 +33,21 @@ app = FastAPI(
 # Set up CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust in production
+    allow_origins=[
+        "https://resurva.my.id",
+        "https://resurva.my.id.",
+        "http://resurva.my.id",
+        "http://resurva.my.id.",
+        "https://storage.resurva.my.id",
+        "https://storage.resurva.my.id.",
+        "http://storage.resurva.my.id",
+        "http://storage.resurva.my.id.",
+        "https://api.resurva.my.id",
+        "https://api.resurva.my.id.",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_origin_regex=r"https?://([a-zA-Z0-9-]+\.)*resurva\.my\.id\.?|http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

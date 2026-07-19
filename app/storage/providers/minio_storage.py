@@ -52,9 +52,12 @@ class MinioStorageProvider(StorageProvider):
 
     async def delete_file(self, file_path: str) -> bool:
         # Extract object key (handles both absolute URLs and relative paths)
+        pub_endpoint = (getattr(settings, "S3_PUBLIC_URL", None) or "").rstrip("/")
         endpoint = (settings.S3_ENDPOINT_URL or "http://localhost:9000").rstrip("/")
-        prefix = f"{endpoint}/{self.bucket_name}/"
-        key = file_path.replace(prefix, "")
+        key = file_path
+        if pub_endpoint:
+            key = key.replace(f"{pub_endpoint}/{self.bucket_name}/", "")
+        key = key.replace(f"{endpoint}/{self.bucket_name}/", "")
         if key.startswith("/"):
             key = key[1:]
 
@@ -74,7 +77,8 @@ class MinioStorageProvider(StorageProvider):
             return ""
         if file_path.startswith("http://") or file_path.startswith("https://"):
             return file_path
-        endpoint = (settings.S3_ENDPOINT_URL or "http://localhost:9000").rstrip("/")
+        base_url = (getattr(settings, "S3_PUBLIC_URL", None) or settings.S3_ENDPOINT_URL or "http://localhost:9000").rstrip("/")
         clean_path = file_path.lstrip("/")
-        return f"{endpoint}/{self.bucket_name}/{clean_path}"
+        return f"{base_url}/{self.bucket_name}/{clean_path}"
+
 
