@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, Integer, String, JSON, DateTime, UniqueConstraint, func
+from sqlalchemy import ForeignKey, Index, Integer, String, JSON, DateTime, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import WalletTransactionType, WalletType, WalletTransactionCategory, TransactionStatus
@@ -41,6 +41,9 @@ class Wallet(Base, IdMixin, UpdatedAtMixin):
 
 class WalletTransaction(Base, IdMixin, CreatedAtMixin):
     __tablename__ = "wallet_transactions"
+    __table_args__ = (
+        Index("idx_wtx_wallet_date", "wallet_id", "transaction_date"),
+    )
 
     wallet_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("wallets.id", ondelete="CASCADE"),

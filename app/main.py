@@ -30,10 +30,20 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None,
 )
 
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+# Set up Allowed Hosts middleware
+allowed_hosts = settings.ALLOWED_HOSTS if isinstance(settings.ALLOWED_HOSTS, list) else [h.strip() for h in settings.ALLOWED_HOSTS.split(",")]
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=allowed_hosts,
+)
+
 # Set up CORS middleware
+cors_origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [o.strip() for o in settings.CORS_ORIGINS.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust in production
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
