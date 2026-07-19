@@ -76,20 +76,36 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: Setup SSH Key & Deploy
-        id: deploy_step
+      - name: SSH Diagnostics & Setup
         run: |
           mkdir -p ~/.ssh
-          # printf dipakai agar newline di akhir key terjaga dengan benar
           printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+          echo "=========================================="
+          echo "       SSH CONFIGURATION DIAGNOSTICS      "
+          echo "=========================================="
+          echo "Target Server Host : ${{ secrets.SERVER_HOST }}"
+          echo "Target Server User : ${{ secrets.SERVER_USER }}"
+          echo "Target SSH Port    : 22"
+          echo "Deploy Key Path    : ~/.ssh/deploy_key"
+          echo "Deploy Key Size    : $(wc -c < ~/.ssh/deploy_key) bytes"
+          echo "Deploy Key Lines   : $(wc -l < ~/.ssh/deploy_key) lines"
+          echo "Key Header         : $(head -n 1 ~/.ssh/deploy_key)"
+          echo "Key Footer         : $(tail -n 1 ~/.ssh/deploy_key)"
+          echo "=========================================="
+
+          echo "Scanning SSH host keys for ${{ secrets.SERVER_HOST }}:22..."
+          ssh-keyscan -p 22 -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts 2>&1
           chmod 644 ~/.ssh/known_hosts
 
+      - name: Deploy via SSH
+        id: deploy_step
+        run: |
           eval $(ssh-agent -s)
           ssh-add ~/.ssh/deploy_key
 
-          ssh -A \
+          ssh -v -A \
             -o StrictHostKeyChecking=no \
             -o BatchMode=yes \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
