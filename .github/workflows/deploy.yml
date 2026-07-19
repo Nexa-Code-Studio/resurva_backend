@@ -76,7 +76,8 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: Setup SSH Key
+      - name: Setup SSH Key & Deploy
+        id: deploy_step
         run: |
           mkdir -p ~/.ssh
           # printf dipakai agar newline di akhir key terjaga dengan benar
@@ -85,10 +86,10 @@ jobs:
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Deploy via SSH
-        id: deploy_step
-        run: |
-          ssh -i ~/.ssh/deploy_key \
+          eval $(ssh-agent -s)
+          ssh-add ~/.ssh/deploy_key
+
+          ssh -A \
             -o StrictHostKeyChecking=no \
             -o BatchMode=yes \
             ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
