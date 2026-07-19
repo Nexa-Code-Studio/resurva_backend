@@ -2,7 +2,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import OrderChannel, OrderStatus
@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 
 class Order(Base, IdMixin, CreatedAtMixin):
     __tablename__ = "orders"
+    __table_args__ = (
+        Index("idx_order_store_status_created", "store_id", "status", "created_at"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),

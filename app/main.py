@@ -30,23 +30,20 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None,
 )
 
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+# Set up Allowed Hosts middleware
+allowed_hosts = settings.ALLOWED_HOSTS if isinstance(settings.ALLOWED_HOSTS, list) else [h.strip() for h in settings.ALLOWED_HOSTS.split(",")]
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=allowed_hosts,
+)
+
 # Set up CORS middleware
+cors_origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [o.strip() for o in settings.CORS_ORIGINS.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://resurva.my.id",
-        "https://resurva.my.id.",
-        "http://resurva.my.id",
-        "http://resurva.my.id.",
-        "https://storage.resurva.my.id",
-        "https://storage.resurva.my.id.",
-        "http://storage.resurva.my.id",
-        "http://storage.resurva.my.id.",
-        "https://api.resurva.my.id",
-        "https://api.resurva.my.id.",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=cors_origins,
     allow_origin_regex=r"https?://([a-zA-Z0-9-]+\.)*resurva\.my\.id\.?|http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],

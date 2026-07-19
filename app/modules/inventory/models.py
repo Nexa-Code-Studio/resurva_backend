@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 
 class InventoryBatch(Base, IdMixin, CreatedAtMixin):
     __tablename__ = "inventory_batches"
+    __table_args__ = (
+        Index("idx_inv_batch_store_prod_exp", "store_id", "product_id", "expired_at"),
+    )
 
     product_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("products.id", ondelete="CASCADE"),
@@ -66,6 +69,9 @@ class ExpiryAlert(Base, IdMixin):
 class InventoryTransaction(Base, IdMixin, CreatedAtMixin):
     """Records each stock movement (in/out/adjustment) for a product batch."""
     __tablename__ = "inventory_transactions"
+    __table_args__ = (
+        Index("idx_inv_tx_store_prod_created", "store_id", "product_id", "created_at"),
+    )
 
     product_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("products.id", ondelete="CASCADE"),

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.core.enums import OrderChannel, OrderStatus
+from app.core.enums import OrderChannel, OrderStatus, PaymentMethod
 
 
 class OrderItemBase(BaseModel):
@@ -33,6 +33,10 @@ class OrderBase(BaseModel):
 class OrderCreate(OrderBase):
     items: list[OrderItemCreate]
     notes: str | None = None
+    payment_method: PaymentMethod | None = None
+    payment_details: dict | None = None
+    status: OrderStatus | None = None
+
 
 
 class OrderUpdateStatus(BaseModel):

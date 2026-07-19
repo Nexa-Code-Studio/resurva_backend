@@ -76,18 +76,23 @@ jobs:
         id: timer
         run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
 
-      - name: Setup SSH Agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Add server to known_hosts
-        run: ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          # printf dipakai agar newline di akhir key terjaga dengan benar
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
       - name: Deploy via SSH
         id: deploy_step
         run: |
-          DEPLOY_LOG=$(ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH' 2>&1
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o BatchMode=yes \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            bash -s << 'ENDSSH' 2>&1 | tee /tmp/deploy_output.txt
             set -e
 
             echo "--- Masuk ke direktori project ---"
@@ -110,10 +115,9 @@ jobs:
             echo "--- Verifikasi service ---"
             sudo systemctl is-active resurva
           ENDSSH
-          )
 
           echo "deploy_log<<EOF" >> $GITHUB_OUTPUT
-          echo "$DEPLOY_LOG" | tail -20 >> $GITHUB_OUTPUT
+          cat /tmp/deploy_output.txt | tail -20 >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Calculate duration
@@ -141,6 +145,7 @@ jobs:
           SHORT_SHA="${COMMIT_SHA:0:7}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+          REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
 
           PAYLOAD=$(jq -n \
             --arg short_sha "$SHORT_SHA" \
@@ -151,11 +156,12 @@ jobs:
             --arg commit_url "$COMMIT_URL" \
             --arg duration "$DURATION" \
             --arg timestamp "$TIMESTAMP" \
+            --arg repo_name "$REPO_NAME" \
             '{
               username: "Resurva CI/CD",
-              avatar_url: "https://raw.githubusercontent.com/gilbarbara/logos/main/logos/python.svg",
+              avatar_url: "http://172.93.219.133:9000/resurva-bucket/assets/kucing_plenger.jpeg",
               embeds: [{
-                title: "Deploy Berhasil",
+                title: ("#" + $repo_name + " Deploy Berhasil"),
                 description: ("> " + $commit_msg),
                 color: 3908956,
                 fields: [
@@ -191,7 +197,7 @@ jobs:
                   }
                 ],
                 footer: {
-                  text: "Resurva Backend · resurva_backend",
+                  text: ("Resurva Backend · " + $repo_name),
                   icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
                 },
                 timestamp: $timestamp
@@ -219,6 +225,7 @@ jobs:
           SHORT_SHA="${COMMIT_SHA:0:7}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+          REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
 
           # Truncate log agar tidak melebihi batas Discord (1024 char per field)
           LOG_SNIPPET=$(echo "$DEPLOY_LOG" | tail -15 | head -c 900)
@@ -236,11 +243,12 @@ jobs:
             --arg duration "$DURATION" \
             --arg timestamp "$TIMESTAMP" \
             --arg log_snippet "$LOG_SNIPPET" \
+            --arg repo_name "$REPO_NAME" \
             '{
               username: "Resurva CI/CD",
-              avatar_url: "https://raw.githubusercontent.com/gilbarbara/logos/main/logos/python.svg",
+              avatar_url: "http://172.93.219.133:9000/resurva-bucket/assets/kucing_plenger.jpeg",
               embeds: [{
-                title: "Deploy Gagal",
+                title: ("#" + $repo_name + " Deploy Gagal"),
                 description: ("> " + $commit_msg),
                 color: 15746887,
                 fields: [
@@ -281,7 +289,7 @@ jobs:
                   }
                 ],
                 footer: {
-                  text: "Resurva Backend · resurva_backend",
+                  text: ("Resurva Backend · " + $repo_name),
                   icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
                 },
                 timestamp: $timestamp

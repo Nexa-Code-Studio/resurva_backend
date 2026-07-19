@@ -15,6 +15,23 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = True
 
+    # Security & Host Settings
+    CORS_ORIGINS: list[str] | str = [
+        "https://resurva.my.id",
+        "https://api.resurva.my.id",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "*"
+    ]
+    ALLOWED_HOSTS: list[str] | str = [
+        "resurva.my.id",
+        "api.resurva.my.id",
+        "*.resurva.my.id",
+        "localhost",
+        "127.0.0.1",
+        "*"
+    ]
+
     # Database Settings
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
