@@ -165,8 +165,8 @@ jobs:
             echo "--- Masuk ke direktori project ---"
             cd /var/www/resurva/resurva_backend
 
-            echo "--- Git pull latest changes ---"
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             echo "--- Install/update dependencies ---"
             if [ -d "venv" ]; then VENV="venv"; else VENV=".venv"; fi
