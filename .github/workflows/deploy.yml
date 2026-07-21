@@ -62,6 +62,73 @@ jobs:
           pytest tests/ -v --tb=short 2>&1 | tee /tmp/pytest_output.txt
           echo "PYTEST_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
 
+      - name: Discord Notification — Test Failed
+        if: failure()
+        env:
+          DISCORD_WEBHOOK: "https://discord.com/api/webhooks/1528030528954175621/8bmY2J_yx6zxbZyRuXGi3-ZkrcjcvMWhDJ9yz7YKlW0y1xp5siRUbn6vlgObH5OeZxX5"
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          ACTOR: ${{ github.actor }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
+          REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
+
+          PAYLOAD=$(jq -n \
+            --arg short_sha "$SHORT_SHA" \
+            --arg commit_msg "$COMMIT_MSG" \
+            --arg actor "$ACTOR" \
+            --arg branch "$BRANCH" \
+            --arg run_url "$RUN_URL" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg timestamp "$TIMESTAMP" \
+            --arg repo_name "$REPO_NAME" \
+            '{
+              username: "Resurva CI/CD",
+              avatar_url: "http://172.93.219.133:9000/resurva-bucket/assets/kucing_plenger.jpeg",
+              embeds: [{
+                title: ("#" + $repo_name + " Pengujian Gagal"),
+                description: ("> " + $commit_msg),
+                color: 15746887,
+                fields: [
+                  {
+                    name: "Branch",
+                    value: ("`" + $branch + "`"),
+                    inline: true
+                  },
+                  {
+                    name: "Commit",
+                    value: ("[`" + $short_sha + "`](" + $commit_url + ")"),
+                    inline: true
+                  },
+                  {
+                    name: "Triggered by",
+                    value: $actor,
+                    inline: true
+                  },
+                  {
+                    name: "Detail lengkap",
+                    value: ("[Buka GitHub Actions](" + $run_url + ")"),
+                    inline: false
+                  }
+                ],
+                footer: {
+                  text: ("Resurva Backend · " + $repo_name),
+                  icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+                },
+                timestamp: $timestamp
+              }]
+            }')
+
+          curl -s -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
+
+
   # ─────────────────────────────────────────────────────────────
   # JOB 2: Deploy (hanya jika test lulus)
   # ─────────────────────────────────────────────────────────────
