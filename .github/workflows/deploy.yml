@@ -102,18 +102,15 @@ jobs:
             git pull origin main
 
             echo "--- Install/update dependencies ---"
-            .venv/bin/pip install -r requirements.txt --quiet
+            if [ -d "venv" ]; then VENV="venv"; else VENV=".venv"; fi
+            $VENV/bin/pip install -r requirements.txt --quiet
 
             echo "--- Jalankan Alembic migration ---"
-            .venv/bin/alembic upgrade head
+            $VENV/bin/alembic upgrade head
 
             echo "--- Restart service resurva ---"
-            sudo systemctl restart resurva
-
-            sleep 3
-
-            echo "--- Verifikasi service ---"
-            sudo systemctl is-active resurva
+            chmod +x scripts/deploy_restart.sh
+            sudo ./scripts/deploy_restart.sh
           ENDSSH
 
           echo "deploy_log<<EOF" >> $GITHUB_OUTPUT
