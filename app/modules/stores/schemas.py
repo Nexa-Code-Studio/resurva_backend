@@ -22,7 +22,10 @@ class StoreBase(BaseModel):
 
 
 class StoreCreate(StoreBase):
-    pass
+    username: str | None = Field(None, description="Username for store seller login")
+    password: str | None = Field(None, description="Password for store seller login")
+    email: str | None = Field(None, description="Email address for store/seller")
+    contact: str | None = Field(None, description="Contact phone number")
 
 
 class StoreUpdate(BaseModel):
@@ -42,6 +45,10 @@ class StoreUpdate(BaseModel):
     business_id: uuid.UUID | None = None
 
 
+class ResetPasswordSchema(BaseModel):
+    new_password: str = Field(..., min_length=6, description="New password for store seller")
+
+
 class BusinessInfo(BaseModel):
     id: uuid.UUID
     name: str
@@ -57,7 +64,11 @@ class StoreResponse(StoreBase):
     total_reviews: int = 0
     eco_impact_saved_meals: int = 0
     eco_impact_co2: float = 0.0
+    monthly_revenue: int = 0
+    email: str | None = None
+    contact: str | None = None
     business: BusinessInfo | None = None
+
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -10,6 +10,7 @@ class UserBase(BaseModel):
     username: str
     email: EmailStr
     role: UserRole = UserRole.CUSTOMER
+    is_active: bool = True
     business_id: uuid.UUID | None = None
     store_id: uuid.UUID | None = None
 
@@ -23,6 +24,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     password: str | None = None
     role: UserRole | None = None
+    is_active: bool | None = None
     business_id: uuid.UUID | None = None
 
 

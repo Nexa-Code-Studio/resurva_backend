@@ -8,6 +8,7 @@ from app.db.base import Base, CreatedAtMixin, IdMixin
 if TYPE_CHECKING:
     from app.modules.stores.models import Store
     from app.modules.users.models import User
+    from app.modules.wallets.models import Wallet
 
 
 class Business(Base, IdMixin, CreatedAtMixin):
@@ -15,8 +16,19 @@ class Business(Base, IdMixin, CreatedAtMixin):
 
     name: Mapped[str] = mapped_column(String, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
-    phone: Mapped[str] = mapped_column(String, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String, nullable=True)
+    address: Mapped[str | None] = mapped_column(String, nullable=True)
+    legal_entity: Mapped[str | None] = mapped_column(String, nullable=True)
+    pic: Mapped[str | None] = mapped_column(String, nullable=True)
+    sdg_commitment: Mapped[str | None] = mapped_column(String, nullable=True)
+    year_founded: Mapped[str | None] = mapped_column(String, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    website: Mapped[str | None] = mapped_column(String, nullable=True)
+
 
     # Relationships
     users: Mapped[list["User"]] = relationship("User", back_populates="business", cascade="all, delete-orphan")
     stores: Mapped[list["Store"]] = relationship("Store", back_populates="business", cascade="all, delete-orphan")
+    wallets: Mapped[list["Wallet"]] = relationship("Wallet", back_populates="business", cascade="all, delete-orphan")
+

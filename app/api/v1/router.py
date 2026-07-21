@@ -16,6 +16,7 @@ from app.api.v1.routes import (
     reviews,
     carbon,
     analytics,
+    verifications,
 )
 
 api_router = APIRouter()
@@ -23,6 +24,8 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(business.router, prefix="/businesses", tags=["Businesses"])
+api_router.include_router(business.router, prefix="/business", tags=["Businesses"])
+
 api_router.include_router(stores.router, prefix="/stores", tags=["Stores"])
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
 api_router.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
@@ -35,4 +38,6 @@ api_router.include_router(transactions.router, prefix="/transactions", tags=["Tr
 api_router.include_router(reviews.router, prefix="/reviews", tags=["Reviews"])
 api_router.include_router(carbon.router, prefix="/carbon", tags=["Carbon Logs"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
+api_router.include_router(verifications.router, prefix="/verifications", tags=["Verifications"])
+
 

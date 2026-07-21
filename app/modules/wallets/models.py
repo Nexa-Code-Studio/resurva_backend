@@ -10,6 +10,7 @@ from app.core.enums import WalletTransactionType, WalletType, WalletTransactionC
 from app.db.base import Base, CreatedAtMixin, IdMixin, UpdatedAtMixin
 
 if TYPE_CHECKING:
+    from app.modules.business.models import Business
     from app.modules.stores.models import Store
     from app.modules.transactions.models import Transaction
 
@@ -17,9 +18,13 @@ if TYPE_CHECKING:
 class Wallet(Base, IdMixin, UpdatedAtMixin):
     __tablename__ = "wallets"
 
-    store_id: Mapped[uuid.UUID] = mapped_column(
+    store_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("stores.id", ondelete="CASCADE"),
-        nullable=False
+        nullable=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("businesses.id", ondelete="CASCADE"),
+        nullable=True
     )
     type: Mapped[WalletType] = mapped_column(
         SQLEnum(WalletType),
@@ -29,14 +34,17 @@ class Wallet(Base, IdMixin, UpdatedAtMixin):
     balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     saved_bank_info: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
-    # Unique constraint on (store_id, type)
+    # Unique constraint on (store_id, type) and (business_id, type)
     __table_args__ = (
         UniqueConstraint("store_id", "type", name="uq_store_wallet_type"),
+        UniqueConstraint("business_id", "type", name="uq_business_wallet_type"),
     )
 
     # Relationships
-    store: Mapped["Store"] = relationship("Store", back_populates="wallets")
+    store: Mapped[Optional["Store"]] = relationship("Store", back_populates="wallets")
+    business: Mapped[Optional["Business"]] = relationship("Business", back_populates="wallets")
     wallet_transactions: Mapped[list["WalletTransaction"]] = relationship("WalletTransaction", back_populates="wallet", cascade="all, delete-orphan")
+
 
 
 class WalletTransaction(Base, IdMixin, CreatedAtMixin):

@@ -272,6 +272,81 @@ class WalletService:
         result = await self.db.execute(query)
         return result.scalars().all()
 
+    async def get_or_create_business_hq_wallet(self, business_id: uuid.UUID) -> Wallet:
+        result = await self.wallet_repo.db.execute(
+            select(Wallet).filter(Wallet.business_id == business_id, Wallet.type == WalletType.HQ)
+        )
+        wallet = result.scalar_one_or_none()
+        if not wallet:
+            wallet = Wallet(business_id=business_id, type=WalletType.HQ, balance=0)
+            self.db.add(wallet)
+            await self.db.flush()
+        return wallet
+
+    async def create_business_hq_transaction(
+        self,
+        business_id: uuid.UUID,
+        type: WalletTransactionType,
+        category: WalletTransactionCategory,
+        amount: int,
+        notes: str | None = None,
+        date: datetime | None = None
+    ) -> WalletTransaction:
+        wallet = await self.get_or_create_business_hq_wallet(business_id)
+
+        if type == WalletTransactionType.CREDIT:
+            wallet.balance += amount
+        else:
+            wallet.balance -= amount
+
+        self.db.add(wallet)
+        await self.db.flush()
+
+        tx = WalletTransaction(
+            wallet_id=wallet.id,
+            wallet=wallet,
+            type=type,
+            category=category,
+            amount=amount,
+            balance_after=wallet.balance,
+            note=notes,
+            transaction_date=date or datetime.now()
+        )
+        self.db.add(tx)
+        await self.db.flush()
+        return tx
+
+    async def get_business_hq_transactions(
+        self,
+        business_id: uuid.UUID,
+        tx_type: str | None = None,
+        search: str | None = None
+    ) -> Sequence[WalletTransaction]:
+        from sqlalchemy.orm import selectinload
+        wallet = await self.get_or_create_business_hq_wallet(business_id)
+
+        query = (
+            select(WalletTransaction)
+            .filter(WalletTransaction.wallet_id == wallet.id)
+            .options(selectinload(WalletTransaction.wallet))
+        )
+
+        if tx_type == "in":
+            query = query.filter(WalletTransaction.type == WalletTransactionType.CREDIT)
+        elif tx_type == "out":
+            query = query.filter(WalletTransaction.type.in_([WalletTransactionType.DEBIT, WalletTransactionType.WITHDRAWAL]))
+
+        if search and search.strip():
+            s_term = f"%{search.strip().lower()}%"
+            from sqlalchemy import func as sql_func
+            query = query.filter(
+                sql_func.lower(WalletTransaction.note).like(s_term)
+            )
+
+        query = query.order_by(WalletTransaction.transaction_date.desc(), WalletTransaction.created_at.desc())
+        result = await self.db.execute(query)
+        return result.scalars().all()
+
     async def list_wallets_paginated(
         self,
         page: int = 1,
@@ -320,3 +395,4 @@ class WalletService:
             sort_order=sort_order,
             options=[selectinload(WalletTransaction.wallet), selectinload(WalletTransaction.transaction)]
         )
+

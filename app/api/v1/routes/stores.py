@@ -10,7 +10,9 @@ from app.modules.stores.schemas import (
     StoreUpdate,
     EnterpriseRequestCreate,
     EnterpriseRequestResponse,
+    ResetPasswordSchema,
 )
+
 from app.modules.stores.service.stores_service import StoreService
 from app.storage.factory import StorageFactory
 
@@ -155,4 +157,17 @@ async def create_enterprise_request(
             detail="Store not found"
         )
     return await service.create_enterprise_request(store_id, schema)
+
+
+@router.post("/{store_id}/reset-seller-password", status_code=status.HTTP_200_OK)
+async def reset_seller_password(
+    store_id: uuid.UUID,
+    schema: ResetPasswordSchema,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Reset the password for the primary merchant/seller user associated with a store."""
+    service = StoreService(db)
+    await service.reset_seller_password(store_id, schema.new_password)
+    return {"status": "success", "message": "Password merchant berhasil diperbarui."}
+
 

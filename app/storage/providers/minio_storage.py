@@ -1,6 +1,7 @@
 import logging
 import uuid
 
+import mimetypes
 from app.core.config import settings
 from app.storage.interfaces.storage_provider import StorageProvider
 
@@ -38,12 +39,16 @@ class MinioStorageProvider(StorageProvider):
             logger.info(f"[MOCK MINIO] Uploading file to minio://{settings.S3_BUCKET_NAME}/{key}")
             return key
 
+        content_type, _ = mimetypes.guess_type(filename)
+        if not content_type:
+            content_type = "application/octet-stream"
+
         try:
             self.client.put_object(
                 Bucket=self.bucket_name,
                 Key=key,
                 Body=file_content,
-                ContentType="application/octet-stream"
+                ContentType=content_type
             )
             return key
         except ClientError as e:

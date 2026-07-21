@@ -19,7 +19,8 @@ def json_serial(obj):
         return float(obj)
     if isinstance(obj, uuid.UUID):
         return str(obj)
-    raise TypeError(f"Type {type(obj)} not serializable")
+    return str(obj)
+
 
 
 class ToolCallService:

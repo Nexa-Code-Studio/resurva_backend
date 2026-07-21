@@ -8,13 +8,15 @@ from app.core.enums import WalletTransactionType, WalletType, WalletTransactionC
 
 class WalletResponse(BaseModel):
     id: uuid.UUID
-    store_id: uuid.UUID
+    store_id: uuid.UUID | None = None
+    business_id: uuid.UUID | None = None
     type: WalletType
     balance: int
     saved_bank_info: dict | None = None
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 
 
 class WalletTransactionResponse(BaseModel):

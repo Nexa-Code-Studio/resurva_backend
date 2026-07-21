@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.mcp.base_tool import BaseMCPTool
 from app.modules.summaries.models import DailySummary, MonthlySummary
 from app.core.redis import get_redis_client
+from app.modules.chat.service.tool_call_service import json_serial
+
 
 
 class SalesSummaryInput(BaseModel):
@@ -52,10 +54,12 @@ class SalesSummaryTool(BaseMCPTool):
         result = await self._execute_db(db, store_id, period, date, year, month, start_date, end_date)
 
         if redis_client and "error" not in result and "message" not in result:
+
             try:
-                await redis_client.set(cache_key, json.dumps(result), ex=300)
+                await redis_client.set(cache_key, json.dumps(result, default=json_serial), ex=300)
             except Exception:
                 pass
+
 
         return result
 
