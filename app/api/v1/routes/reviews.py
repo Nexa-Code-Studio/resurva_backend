@@ -4,11 +4,20 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.reviews.schemas import ReviewResponse
+from app.modules.reviews.schemas import ReviewResponse, ReviewsSummaryResponse
 from app.modules.reviews.service.reviews_service import ReviewService
 from app.core.pagination import PaginatedResponse, PaginationMetadata
 
 router = APIRouter()
+
+
+@router.get("/summary", response_model=ReviewsSummaryResponse)
+async def get_reviews_summary(
+    store_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = ReviewService(db)
+    return await service.get_reviews_summary(store_id=store_id)
 
 
 @router.get("/", response_model=PaginatedResponse[ReviewResponse])

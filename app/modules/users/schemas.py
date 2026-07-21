@@ -13,6 +13,7 @@ class UserBase(BaseModel):
     is_active: bool = True
     business_id: uuid.UUID | None = None
     store_id: uuid.UUID | None = None
+    avatar_url: str | None = None
 
 
 class UserCreate(UserBase):
