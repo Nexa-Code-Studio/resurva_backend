@@ -28,6 +28,8 @@ from app.modules.transactions.models import Transaction
 from app.modules.wallets.models import Wallet, WalletTransaction
 from app.modules.summaries.models import DailySummary, MonthlySummary
 from app.modules.chat.models import Conversation, ChatMessage, ToolCall, ChatMemory
+from app.modules.verifications.models import PartnerVerification
+
 
 # Alembic Config
 config = context.config

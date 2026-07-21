@@ -86,6 +86,7 @@ class WalletTransactionType(str, Enum):
 class WalletType(str, Enum):
     DIGITAL = "digital"
     OFFLINE = "offline"
+    HQ = "hq"
 
 
 class WalletTransactionCategory(str, Enum):
@@ -93,6 +94,9 @@ class WalletTransactionCategory(str, Enum):
     CAT_SALES = "catSales"
     CAT_CAPITAL = "catCapital"
     CAT_ADJUSTMENT = "catAdjustment"
+    CAT_BRANCH_DEPOSIT = "catBranchDeposit"
+    CAT_INVESTMENT = "catInvestment"
+    CAT_SPONSORSHIP = "catSponsorship"
 
     # Pengeluaran (Debit)
     CAT_INGREDIENTS = "catIngredients"
@@ -103,7 +107,41 @@ class WalletTransactionCategory(str, Enum):
     CAT_MARKETING = "catMarketing"
     CAT_MAINTENANCE = "catMaintenance"
     CAT_WITHDRAWAL = "catWithdrawal"
+    CAT_IT_INFRA = "catItInfra"
+    CAT_NATIONAL_MARKETING = "catNationalMarketing"
+    CAT_OFFICE_OPS = "catOfficeOps"
 
     # Umum
     CAT_OTHERS = "catOthers"
+
+    @classmethod
+    def _missing_(cls, value):
+        if not isinstance(value, str):
+            return None
+        val_lower = value.lower().strip()
+        for member in cls:
+            if member.value.lower() == val_lower or member.name.lower() == val_lower:
+                return member
+        cat_map = {
+            "setoran cabang": cls.CAT_BRANCH_DEPOSIT,
+            "investasi": cls.CAT_INVESTMENT,
+            "pendanaan / investasi": cls.CAT_INVESTMENT,
+            "sponsorship": cls.CAT_SPONSORSHIP,
+            "sponsorship terpusat": cls.CAT_SPONSORSHIP,
+            "gaji & kompensasi": cls.CAT_SALARY,
+            "gaji staf hq": cls.CAT_SALARY,
+            "marketing nasional": cls.CAT_NATIONAL_MARKETING,
+            "biaya marketing nasional": cls.CAT_NATIONAL_MARKETING,
+            "infrastruktur it": cls.CAT_IT_INFRA,
+            "sewa server & infrastruktur it": cls.CAT_IT_INFRA,
+            "operasional kantor": cls.CAT_OFFICE_OPS,
+            "biaya operasional kantor hq": cls.CAT_OFFICE_OPS,
+            "pemasukan lainnya": cls.CAT_OTHERS,
+            "pengeluaran lainnya": cls.CAT_OTHERS,
+            "lainnya": cls.CAT_OTHERS,
+        }
+        if val_lower in cat_map:
+            return cat_map[val_lower]
+        return None
+
 

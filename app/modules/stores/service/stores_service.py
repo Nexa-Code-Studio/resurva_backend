@@ -48,14 +48,17 @@ class StoreService:
             return
         
         from sqlalchemy import select, func, and_
-        from datetime import datetime, UTC
+        from datetime import datetime, timedelta, UTC
         from app.modules.products.models import Product
         from app.modules.reviews.models import Review
         from app.modules.carbon.models import CarbonLog
         from app.modules.orders.models import Order
+        from app.modules.users.models import User
+        from app.core.enums import OrderStatus
         
         store_ids = [store.id for store in stores]
         now = datetime.now(UTC)
+        thirty_days_ago = now - timedelta(days=30)
         
         # 1. active_surplus count per store
         surplus_res = await self.db.execute(
@@ -95,6 +98,30 @@ class StoreService:
             .group_by(Order.store_id)
         )
         co2_map = {row[0]: float(row[1] or 0.0) for row in co2_res.all()}
+
+        # 5. monthly_revenue (30-day sum of final_price for completed orders)
+        rev_res = await self.db.execute(
+            select(Order.store_id, func.sum(Order.final_price))
+            .filter(
+                and_(
+                    Order.store_id.in_(store_ids),
+                    Order.status != OrderStatus.CANCELLED,
+                    Order.created_at >= thirty_days_ago
+                )
+            )
+            .group_by(Order.store_id)
+        )
+        rev_map = {row[0]: int(row[1] or 0) for row in rev_res.all()}
+
+        # 6. Primary User (seller) email & phone mapping
+        user_res = await self.db.execute(
+            select(User)
+            .filter(User.store_id.in_(store_ids))
+        )
+        users_by_store = {}
+        for user in user_res.scalars().all():
+            if user.store_id not in users_by_store:
+                users_by_store[user.store_id] = user
         
         # Inject dynamic properties to Store objects
         for store in stores:
@@ -102,6 +129,11 @@ class StoreService:
             store.total_reviews = reviews_map.get(store.id, 0)
             store.eco_impact_saved_meals = meals_map.get(store.id, 0)
             store.eco_impact_co2 = round(co2_map.get(store.id, 0.0), 1)
+            store.monthly_revenue = rev_map.get(store.id, 0)
+            u = users_by_store.get(store.id)
+            store.email = u.email if u else None
+            store.contact = None
+
 
     async def get_store(self, store_id: uuid.UUID) -> Store | None:
         from sqlalchemy.orm import selectinload
@@ -152,10 +184,14 @@ class StoreService:
         await self._populate_store_stats(list(items))
         return items, total
 
-
     async def create_store(self, schema: StoreCreate) -> Store:
-        # Create store
+        # Extract extra fields not on Store model
         store_data = schema.model_dump()
+        username = store_data.pop("username", None)
+        password = store_data.pop("password", None)
+        email = store_data.pop("email", None)
+        contact = store_data.pop("contact", None)
+
         category_name = store_data.pop("category", None)
         store_data["category_id"] = await self._resolve_category_id(category_name)
         store = await self.repository.create(store_data)
@@ -166,6 +202,23 @@ class StoreService:
         offline_wallet = Wallet(store_id=store.id, type=WalletType.OFFLINE, balance=0)
         self.db.add_all([digital_wallet, offline_wallet])
         await self.db.flush()
+
+        # If merchant login credentials provided, auto-create User (SELLER)
+        if username and password:
+            from app.modules.users.models import User
+            from app.core.enums import UserRole
+            from app.core.security import get_password_hash
+            user_email = email or f"{username}@partner.resurva.id"
+            user = User(
+                username=username,
+                email=user_email,
+                password=get_password_hash(password),
+                role=UserRole.SELLER,
+                store_id=store.id,
+                business_id=schema.business_id
+            )
+            self.db.add(user)
+            await self.db.flush()
 
         return await self.get_store(store.id)
 
@@ -183,8 +236,32 @@ class StoreService:
         await self.repository.update(store, store_data)
         return await self.get_store(store_id)
 
+    async def reset_seller_password(self, store_id: uuid.UUID, new_password: str) -> bool:
+        from sqlalchemy import select
+        from app.modules.users.models import User
+        from app.core.security import get_password_hash
+        
+        result = await self.db.execute(
+            select(User).filter(User.store_id == store_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Akun merchant untuk mitra ini tidak ditemukan."
+            )
+        user.password = get_password_hash(new_password)
+        await self.db.flush()
+        return True
+
+
     async def delete_store(self, store_id: uuid.UUID) -> bool:
-        return await self.repository.delete(store_id)
+        # Soft Delete (deactivate store)
+        store = await self.get_store(store_id)
+        if not store:
+            return False
+        await self.repository.update(store, {"is_active": False})
+        return True
 
     async def create_enterprise_request(
         self,
@@ -197,4 +274,5 @@ class StoreService:
         self.db.add(req)
         await self.db.flush()
         return req
+
 

@@ -15,7 +15,8 @@ from app.modules.business.models import Business
 from app.modules.stores.models import Store
 from app.modules.chat.service.conversation_service import ConversationService
 from app.modules.chat.service.memory_service import MemoryService
-from app.modules.chat.service.tool_call_service import ToolCallService
+from app.modules.chat.service.tool_call_service import ToolCallService, json_serial
+
 
 MAX_TOOL_TURNS = 5
 
@@ -53,7 +54,32 @@ Jika pengguna bertanya mengenai dari mana skor kesehatan/audit produk berasal, b
    - Skor < 50.0: RETIRE (Kaji ulang / berpotensi dihentikan karena tidak efisien, rating buruk, atau penjualan rendah)"""
 
     prompt = base
-    if user.role == UserRole.SELLER:
+
+    is_enterprise_user = (
+        user.role in (UserRole.OWNER, UserRole.ADMIN)
+        or (user.business_id is not None and not user.store_id)
+    )
+
+    if is_enterprise_user:
+        business_name = user.business.name if user.business else "Bisnis Anda"
+        business_id = str(user.business_id) if user.business_id else "tidak diset"
+        stores_info = ""
+        if user.business and user.business.stores:
+            stores_info = ", ".join([f"'{s.name}' (ID: {s.id})" for s in user.business.stores])
+        else:
+            stores_info = "Belum ada toko terdaftar"
+        prompt += (
+            f"\n\nKONTEKS: Kamu adalah RESURVA Enterprise AI Assistant yang membantu Manajemen HQ / Owner bisnis '{business_name}' (business_id: {business_id}).\n"
+            f"- Cabang/Toko terdaftar ({len(user.business.stores if user.business else [])} toko): {stores_info}.\n"
+            "- Kamu HARUS menganalisis performa bisnis secara MAKRO/ENTERPRISE lintas seluruh cabang, bukan hanya 1 toko spesifik.\n"
+            "- Fokus pada: perbandingan performa antar cabang, akumulasi omset & kerugian terhindari, total reduksi emisi CO2e, serta keberlanjutan SDG.\n"
+            "- Gunakan MCP tool 'business_overview' untuk membandingkan cabang secara langsung.\n"
+            "- DILARANG KERAS menyebutkan bahwa kamu adalah asisten untuk 1 toko/cabang tertentu saja.\n"
+            "- Ketika menyajikan data perbandingan cabang, statistik omset, atau daftar metrik, SELALU gunakan format TABEL MARKDOWN (Markdown Table) atau DIAGRAM MERMAID (misal ```mermaid pie atau ```mermaid graph TD) agar data tersaji sangat rapi, terstruktur, dan elegan."
+        )
+
+
+    elif user.role == UserRole.SELLER:
         store_name = user.store.name if user.store else "Toko Anda"
         store_id = str(user.store_id) if user.store_id else "tidak diset"
         prompt += f"\n\nKONTEKS: Kamu membantu SELLER dari toko '{store_name}' (store_id: {store_id}).\n" \
@@ -61,21 +87,6 @@ Jika pengguna bertanya mengenai dari mana skor kesehatan/audit produk berasal, b
                       "- Fokus pada: stok, produk hampir expired, omzet harian, review pelanggan.\n" \
                       "- Berikan rekomendasi actionable (misal: 'diskon produk X karena expired 2 hari lagi').\n" \
                       "- Jangan tampilkan data financial sensitif seperti detail wallet toko lain."
-
-    elif user.role == UserRole.OWNER:
-        business_name = user.business.name if user.business else "Bisnis Anda"
-        business_id = str(user.business_id) if user.business_id else "tidak diset"
-        stores_info = ""
-        if user.business and user.business.stores:
-            stores_info = ", ".join([f"'{s.name}' (ID: {s.id})" for s in user.business.stores])
-        else:
-            stores_info = "Belum ada toko yang terdaftar"
-        prompt += f"\n\nKONTEKS: Kamu membantu OWNER bisnis '{business_name}' (business_id: {business_id}).\n" \
-                      f"- Toko-toko Anda: {stores_info}.\n" \
-                      "- Kamu bisa melihat semua toko Anda.\n" \
-                      "- Fokus pada: perbandingan performa antar toko, tren revenue, carbon impact keseluruhan.\n" \
-                      "- Bisa melihat data wallet dan transaksi toko Anda.\n" \
-                      "- Berikan insight strategis level bisnis."
 
     if slots:
         slot_lines = []
@@ -114,14 +125,19 @@ class ChatService:
 
         await self.conv_service.add_message(conversation_id, "user", user_message)
 
+        is_enterprise_user = (
+            user.role in (UserRole.OWNER, UserRole.ADMIN)
+            or (user.business_id is not None and not user.store_id)
+        )
+
         # Build allowed store IDs for verification boundaries
         allowed_store_ids = []
-        if user.role == UserRole.SELLER:
-            if user.store_id:
-                allowed_store_ids = [str(user.store_id)]
-        elif user.role == UserRole.OWNER:
+        if is_enterprise_user:
             if user.business and user.business.stores:
                 allowed_store_ids = [str(s.id) for s in user.business.stores]
+        elif user.role == UserRole.SELLER:
+            if user.store_id:
+                allowed_store_ids = [str(user.store_id)]
 
         # Dynamically build system prompt
         from app.modules.chat.service.session_service import SessionService
@@ -157,7 +173,9 @@ class ChatService:
         logger.info(f"Classified user intent: {intent_str}")
 
         # 2. Filter schemas based on intent & role
-        allowed_tools = mcp_registry.get_tool_schemas_for_role(user.role)
+        effective_role = UserRole.OWNER if is_enterprise_user else user.role
+        allowed_tools = mcp_registry.get_tool_schemas_for_role(effective_role)
+
 
         if intent_str == "GENERAL_CHAT":
             tool_schemas = []
@@ -195,7 +213,7 @@ class ChatService:
                     "type": "function",
                     "function": {
                         "name": tc.name,
-                        "arguments": json.dumps(tc.arguments)
+                        "arguments": json.dumps(tc.arguments, default=json_serial)
                     }
                 })
 
@@ -238,8 +256,9 @@ class ChatService:
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": json.dumps(result)
+                    "content": json.dumps(result, default=json_serial)
                 })
+
 
         fallback = "Maaf, saya tidak bisa menyelesaikan permintaan Anda dalam beberapa langkah. Silakan coba lagi."
         await self.conv_service.add_message(conversation_id, "assistant", fallback)

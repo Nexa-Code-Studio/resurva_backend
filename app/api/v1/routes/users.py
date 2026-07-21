@@ -1,12 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.modules.auth.service.access_context_service import AccessContextService, TokenUser
 from app.modules.users.models import User
-from app.modules.users.schemas import UserResponse
+from app.modules.users.schemas import UserResponse, UserCreate, UserUpdate
 from app.modules.users.service.users_service import UserService
 
 from app.core.pagination import PaginatedResponse, PaginationMetadata
@@ -69,5 +69,37 @@ async def get_user(
     db: AsyncSession = Depends(get_db_session)
 ):
     service = UserService(db)
-    return await service.get_user(user_id)
+    user = await service.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.post("/", response_model=UserResponse)
+async def create_user(
+    schema: UserCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = UserService(db)
+    return await service.create_user(schema)
+
+
+@router.patch("/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: uuid.UUID,
+    schema: UserUpdate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = UserService(db)
+    return await service.update_user(user_id, schema)
+
+
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = UserService(db)
+    success = await service.delete_user(user_id)
+    return {"ok": success}
 

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.business.schemas import BusinessCreate, BusinessResponse
+from app.modules.business.schemas import BusinessCreate, BusinessUpdate, BusinessResponse
 from app.modules.business.service.business_service import BusinessService
 
 from app.core.pagination import PaginatedResponse, PaginationMetadata
@@ -50,7 +50,6 @@ async def list_businesses(
     )
 
 
-
 @router.get("/{business_id}", response_model=BusinessResponse)
 async def get_business(
     business_id: uuid.UUID,
@@ -65,3 +64,21 @@ async def get_business(
             detail="Business not found"
         )
     return business
+
+
+@router.put("/{business_id}", response_model=BusinessResponse)
+async def update_business(
+    business_id: uuid.UUID,
+    schema: BusinessUpdate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update a Business entity profile."""
+    service = BusinessService(db)
+    updated = await service.update_business(business_id, schema)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Business not found"
+        )
+    return updated
+

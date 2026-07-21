@@ -31,6 +31,46 @@ async def get_wallet(
     return wallet
 
 
+@router.get("/business/{business_id}/hq", response_model=WalletResponse)
+async def get_business_hq_wallet(
+    business_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = WalletService(db)
+    return await service.get_or_create_business_hq_wallet(business_id)
+
+
+@router.get("/business/{business_id}/transactions", response_model=list[WalletTransactionResponse])
+async def get_business_hq_transactions(
+    business_id: uuid.UUID,
+    type: str | None = None,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = WalletService(db)
+    return list(await service.get_business_hq_transactions(business_id, tx_type=type, search=search))
+
+
+@router.post("/business/{business_id}/transactions", response_model=WalletTransactionResponse)
+async def create_business_hq_transaction(
+    business_id: uuid.UUID,
+    schema: WalletTransactionCreate,
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = WalletService(db)
+    tx = await service.create_business_hq_transaction(
+        business_id=business_id,
+        type=schema.type,
+        category=schema.category,
+        amount=schema.amount,
+        notes=schema.note,
+        date=schema.transaction_date
+    )
+    await db.commit()
+    return tx
+
+
+
 @router.get("/store/{store_id}/balances")
 async def get_store_wallet_balances(
     store_id: uuid.UUID,
