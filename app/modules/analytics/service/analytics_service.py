@@ -275,8 +275,8 @@ class AnalyticsService:
     async def get_inventory_recommendations(
         self, store_id: uuid.UUID
     ) -> InventoryRecommendationResponse:
-        # Fetch products
-        prod_stmt = select(Product).where(Product.store_id == store_id)
+        # Fetch products preloading inventory_batches
+        prod_stmt = select(Product).options(selectinload(Product.inventory_batches)).where(Product.store_id == store_id)
         prod_res = await self.db.execute(prod_stmt)
         products = list(prod_res.scalars().all())
 
@@ -300,6 +300,7 @@ class AnalyticsService:
                 product_daily_sales[item.product_id][date_str] += item.quantity
 
         recommendations: list[ProductStockRecommendation] = []
+        now_time = datetime.now(UTC)
 
         for p in products:
             daily_dict = product_daily_sales.get(p.id, {})
@@ -318,20 +319,30 @@ class AnalyticsService:
             rop = int(round((avg_daily * lead_time) + safety_stock))
             target_stock = rop + int(round(avg_daily * 7))
 
-            days_remaining = round(p.stock / avg_daily, 1) if avg_daily > 0 else 99.0
-            recommended_restock = max(0, target_stock - p.stock)
+            # Dynamic active stock calculation matching list_products_paginated
+            if p.inventory_batches:
+                active_batches = [
+                    b for b in p.inventory_batches
+                    if b.expired_at > now_time and b.remaining_quantity > 0
+                ]
+                avail_stock = sum(b.remaining_quantity for b in active_batches)
+            else:
+                avail_stock = p.stock
+
+            days_remaining = round(avail_stock / avg_daily, 1) if avg_daily > 0 else 99.0
+            recommended_restock = max(0, target_stock - avail_stock)
 
             status = "ok"
-            if p.stock <= rop:
+            if avail_stock <= rop:
                 status = "warning"
-            elif target_stock > 0 and p.stock >= target_stock * 1.1:
+            elif target_stock > 0 and avail_stock >= target_stock * 1.1:
                 status = "overstock"
 
             recommendations.append(ProductStockRecommendation(
                 id=p.id,
                 name=p.name,
                 category=p.product_type,
-                current_stock=p.stock,
+                current_stock=avail_stock,
                 avg_daily=avg_daily,
                 safety_stock=safety_stock,
                 rop=rop,

@@ -52,6 +52,21 @@ app.add_middleware(
 # Register central routers
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+import logging
+
+logger = logging.getLogger("uvicorn.error")
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    logger.error(f"Validation error: {exc.errors()}")
+    logger.error(f"Validation body: {await request.body()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": (await request.body()).decode("utf-8", errors="ignore")},
+    )
+
 from fastapi.staticfiles import StaticFiles
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 

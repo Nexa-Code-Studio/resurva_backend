@@ -23,6 +23,17 @@ class WalletService:
         )
         return result.scalar_one_or_none()
 
+    async def get_store_escrow_balance(self, store_id: uuid.UUID) -> int:
+        from app.modules.orders.models import OrderEscrow
+        from sqlalchemy import func
+        res = await self.db.execute(
+            select(func.sum(OrderEscrow.amount)).where(
+                OrderEscrow.store_id == store_id,
+                OrderEscrow.status == "held"
+            )
+        )
+        return res.scalar() or 0
+
     async def add_funds(
         self,
         store_id: uuid.UUID,

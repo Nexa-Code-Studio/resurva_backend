@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
 from app.modules.auth.service.access_context_service import AccessContextService
-from app.modules.chat.schemas import ChatMessageResponse, ConversationCreate, ConversationResponse
+from app.modules.chat.schemas import ChatMessageResponse, ConversationCreate, ConversationResponse, ConversationUpdate
 from app.modules.chat.service.chat_service import ChatService
 from app.modules.chat.service.conversation_service import ConversationService
 from app.modules.users.models import User
@@ -70,15 +70,20 @@ async def send_message(
         await db.commit()
     except AIException as e:
         await db.rollback()
+        err_msg = str(e)
+        if "context" in err_msg.lower() or "token" in err_msg.lower():
+            user_detail = "Layanan AI mengalami kelebihan batas konteks. Sistem telah menyederhanakan riwayat obrolan, silakan kirim ulang pesan Anda."
+        else:
+            user_detail = f"Kendala Layanan AI: {err_msg}"
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI Provider Error: {str(e)}"
+            detail=user_detail
         )
     except Exception as e:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Terjadi kesalahan internal: {str(e)}"
+            detail=f"Terjadi kesalahan sistem: {str(e)}"
         )
 
     # Retrieve all messages sorted by creation time
@@ -92,4 +97,46 @@ async def send_message(
     messages = list(conv.messages)
     messages.sort(key=lambda m: m.created_at)
     return messages
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationResponse)
+async def update_conversation(
+    conversation_id: uuid.UUID,
+    schema: ConversationUpdate,
+    current_user: User = Depends(AccessContextService.get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update conversation fields like active_skill or title."""
+    service = ConversationService(db)
+    conv = await service.get_conversation(conversation_id)
+    if not conv or conv.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found"
+        )
+    
+    if schema.title is not None:
+        conv.title = schema.title
+    if schema.active_skill is not None:
+        if schema.active_skill.lower() not in [None, "strategi", "visualisasi", "umum", ""]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Skill type not supported. Use 'strategi', 'visualisasi', or 'umum'."
+            )
+        
+        target_skill = None if schema.active_skill.lower() in ["umum", ""] else schema.active_skill.lower()
+        if conv.active_skill != target_skill:
+            conv.active_skill = target_skill
+            skill_labels = {
+                None: "Umum 💬",
+                "strategi": "Strategi 🧠",
+                "visualisasi": "Visualisasi 📊"
+            }
+            label = skill_labels.get(target_skill, "Umum 💬")
+            await service.add_message(conversation_id, "system", f"🔧 Mode Percakapan diubah ke: **Skill {label}**")
+
+    db.add(conv)
+    await db.commit()
+    return conv
+
 

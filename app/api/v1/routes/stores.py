@@ -38,6 +38,7 @@ async def list_stores(
     business_id: uuid.UUID | None = None,
     sort_by: str | None = None,
     sort_order: str = "asc",
+    search: str | None = None,
     db: AsyncSession = Depends(get_db_session)
 ):
     """Retrieve multiple stores with pagination."""
@@ -47,7 +48,8 @@ async def list_stores(
         page_size=page_size,
         business_id=business_id,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
+        search=search
     )
     total_pages = (total + page_size - 1) // page_size if total > 0 else 0
     return PaginatedResponse(

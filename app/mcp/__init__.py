@@ -11,6 +11,7 @@ from app.mcp.tools.reviews_summary_tool import ReviewsSummaryTool
 from app.mcp.tools.business_overview_tool import BusinessOverviewTool
 from app.mcp.tools.stock_recommendation_tool import StockRecommendationTool
 from app.mcp.tools.product_audit_tool import ProductAuditTool
+from app.mcp.tools.web_search_tool import WebSearchAndCrawlTool
 
 # Register all tools automatically
 mcp_registry.register_tool(ProductSearchTool())
@@ -24,3 +25,4 @@ mcp_registry.register_tool(ReviewsSummaryTool())
 mcp_registry.register_tool(BusinessOverviewTool())
 mcp_registry.register_tool(StockRecommendationTool())
 mcp_registry.register_tool(ProductAuditTool())
+mcp_registry.register_tool(WebSearchAndCrawlTool())

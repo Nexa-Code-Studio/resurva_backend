@@ -10,6 +10,41 @@ async def main():
     engine = create_async_engine(DATABASE_URL)
     async with engine.begin() as conn:
         print("Modifying database schema...")
+
+        # Modify stores table (add operating_hours)
+        res_stores = await conn.execute(text("select column_name from information_schema.columns where table_name = 'stores'"))
+        stores_cols = {r[0] for r in res_stores.all()}
+        
+        # Modify reviews table (add order_id)
+        res_reviews = await conn.execute(text("select column_name from information_schema.columns where table_name = 'reviews'"))
+        reviews_cols = {r[0] for r in res_reviews.all()}
+        if 'order_id' not in reviews_cols:
+            print("Adding reviews.order_id...")
+            await conn.execute(text("ALTER TABLE reviews ADD COLUMN order_id UUID REFERENCES orders(id) ON DELETE SET NULL;"))
+        if 'operating_hours' not in stores_cols:
+            print("Adding stores.operating_hours...")
+            await conn.execute(text("ALTER TABLE stores ADD COLUMN operating_hours VARCHAR;"))
+            # Backfill existing data: copy pickup_time (which was opening hours) to operating_hours
+            print("Backfilling stores.operating_hours from pickup_time...")
+            await conn.execute(text("UPDATE stores SET operating_hours = pickup_time WHERE operating_hours IS NULL;"))
+            # Reset pickup_time to default "19:30 - 21:00 WIB" so they don't default to the store's opening hours
+            print("Resetting stores.pickup_time to default surplus pickup window...")
+            await conn.execute(text("UPDATE stores SET pickup_time = '19:30 - 21:00 WIB';"))
+
+        # Modify users table (add full_name, phone_number, photo_url)
+        res_users = await conn.execute(text("select column_name from information_schema.columns where table_name = 'users'"))
+        users_cols = {r[0] for r in res_users.all()}
+        if 'full_name' not in users_cols:
+            print("Adding users.full_name...")
+            await conn.execute(text("ALTER TABLE users ADD COLUMN full_name VARCHAR;"))
+            # Backfill full_name with username
+            await conn.execute(text("UPDATE users SET full_name = username WHERE full_name IS NULL;"))
+        if 'phone_number' not in users_cols:
+            print("Adding users.phone_number...")
+            await conn.execute(text("ALTER TABLE users ADD COLUMN phone_number VARCHAR;"))
+        if 'photo_url' not in users_cols:
+            print("Adding users.photo_url...")
+            await conn.execute(text("ALTER TABLE users ADD COLUMN photo_url VARCHAR;"))
         
         # 1. Modify products table
         # Check if columns already exist first
@@ -113,6 +148,22 @@ async def main():
             );
         """))
         print("Table inventory_transactions created/verified.")
+
+        # Create order_escrows table
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS order_escrows (
+                id UUID PRIMARY KEY,
+                order_id UUID NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+                store_id UUID NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+                amount INTEGER NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'held',
+                released_at TIMESTAMP WITH TIME ZONE,
+                refunded_at TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+        """))
+        print("Table order_escrows created/verified.")
         
     async with engine.connect() as conn:
         # Alter orderstatus enum type to add 'prepared' and 'PREPARED' values if not exists
@@ -127,6 +178,18 @@ async def main():
             print("Enum value 'PREPARED' added/verified in orderstatus type.")
         except Exception as e:
             print(f"Warning/info updating orderstatus enum (PREPARED): {e}")
+
+        try:
+            await conn.execute(text("ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'confirmed';"))
+            print("Enum value 'confirmed' added/verified in orderstatus type.")
+        except Exception as e:
+            print(f"Warning/info updating orderstatus enum (confirmed): {e}")
+
+        try:
+            await conn.execute(text("ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'CONFIRMED';"))
+            print("Enum value 'CONFIRMED' added/verified in orderstatus type.")
+        except Exception as e:
+            print(f"Warning/info updating orderstatus enum (CONFIRMED): {e}")
 
         # 7. Generate SKUs for existing products that don't have it
         print("Updating/generating SKUs for existing products...")

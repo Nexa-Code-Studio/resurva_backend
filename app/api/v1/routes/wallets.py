@@ -81,7 +81,8 @@ async def get_store_wallet_balances(
     offline_wallet = await service.get_wallet_by_store(store_id, WalletType.OFFLINE)
     return {
         "digital": digital_wallet.balance if digital_wallet else 0,
-        "offline": offline_wallet.balance if offline_wallet else 0
+        "offline": offline_wallet.balance if offline_wallet else 0,
+        "escrow": await service.get_store_escrow_balance(store_id)
     }
 
 

@@ -30,6 +30,7 @@ class DiscountType(str, Enum):
 class OrderStatus(str, Enum):
     PENDING = "pending"
     PAID = "paid"
+    CONFIRMED = "confirmed"
     PREPARED = "prepared"
     CANCELLED = "cancelled"
     COMPLETED = "completed"
@@ -43,9 +44,10 @@ class OrderStatus(str, Enum):
             if member.value == val_lower or member.name.lower() == val_lower:
                 return member
         id_map = {
-            "menunggu konfirmasi": cls.PENDING,
-            "baru": cls.PENDING,
-            "disiapkan": cls.PAID,
+            "menunggu pembayaran": cls.PENDING,
+            "menunggu konfirmasi": cls.PAID,
+            "baru": cls.PAID,
+            "disiapkan": cls.CONFIRMED,
             "siap diambil": cls.PREPARED,
             "selesai": cls.COMPLETED,
             "dibatalkan": cls.CANCELLED,

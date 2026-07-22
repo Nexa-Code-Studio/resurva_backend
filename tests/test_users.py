@@ -60,3 +60,69 @@ async def test_user_management_crud():
         # 6. Verify GET returns 404
         res_get_gone = await client.get(f"/api/v1/users/{user_id}")
         assert res_get_gone.status_code == 404, res_get_gone.text
+
+
+async def test_user_profile_endpoints():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        unique_username = f"buyer_{uuid.uuid4().hex[:6]}"
+        unique_email = f"buyer_{uuid.uuid4().hex[:6]}@example.com"
+
+        # 1. Register user
+        register_payload = {
+            "username": unique_username,
+            "email": unique_email,
+            "password": "buyersecure123",
+            "role": "customer"
+        }
+        resp = await client.post("/api/v1/auth/register", json=register_payload)
+        assert resp.status_code == 201, resp.text
+
+        # 2. Login user to get token
+        login_payload = {
+            "username_or_email": unique_username,
+            "password": "buyersecure123"
+        }
+        resp = await client.post("/api/v1/auth/login", json=login_payload)
+        assert resp.status_code == 200, resp.text
+        token = resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 3. GET /me (Verify initial/default values)
+        resp = await client.get("/api/v1/users/me", headers=headers)
+        assert resp.status_code == 200, resp.text
+        me_data = resp.json()
+        assert me_data["username"] == unique_username
+        assert me_data["email"] == unique_email
+        assert me_data["full_name"] is not None  # Backfilled automatically with username
+        assert me_data["phone_number"] is None
+        assert me_data["photo_url"] is None
+
+        # 4. PATCH /me (Update profile fields)
+        update_payload = {
+            "full_name": "Budi Santoso",
+            "phone_number": "+628123456789",
+            "photo_url": "https://example.com/avatar.png"
+        }
+        resp = await client.patch("/api/v1/users/me", json=update_payload, headers=headers)
+        assert resp.status_code == 200, resp.text
+        updated_data = resp.json()
+        assert updated_data["full_name"] == "Budi Santoso"
+        assert updated_data["phone_number"] == "+628123456789"
+        assert updated_data["photo_url"] == "https://example.com/avatar.png"
+
+        # 5. GET /me (Verify changes are persistent)
+        resp = await client.get("/api/v1/users/me", headers=headers)
+        assert resp.status_code == 200, resp.text
+        me_data = resp.json()
+        assert me_data["full_name"] == "Budi Santoso"
+        assert me_data["phone_number"] == "+628123456789"
+        assert me_data["photo_url"] == "https://example.com/avatar.png"
+
+        # 6. Upload avatar image via POST /users/upload-image
+        file_payload = {"file": ("avatar.png", b"fake_png_data", "image/png")}
+        resp = await client.post("/api/v1/users/upload-image", files=file_payload, headers=headers)
+        assert resp.status_code == 200, resp.text
+        upload_data = resp.json()
+        assert "access_url" in upload_data
+        assert upload_data["filename"] == "avatar.png"
+

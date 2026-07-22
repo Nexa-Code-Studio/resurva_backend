@@ -43,18 +43,33 @@ class DeepSeekProvider(LLMProvider):
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(self.base_url, json=payload, headers=headers, timeout=30.0)
+                response = await client.post(self.base_url, json=payload, headers=headers, timeout=45.0)
                 if response.status_code != 200:
-                    raise ProviderException(f"DeepSeek error response: {response.text}")
-                data = response.json()
-                return self._parse_response(data["choices"][0]["message"])
+                    err_detail = response.text
+                    try:
+                        err_json = response.json()
+                        if "error" in err_json and "message" in err_json["error"]:
+                            err_detail = err_json["error"]["message"]
+                    except Exception:
+                        pass
+                    raise ProviderException(f"DeepSeek API Error (HTTP {response.status_code}): {err_detail}")
+                
+                try:
+                    data = response.json()
+                except json.JSONDecodeError as e:
+                    logger.error("DeepSeek returned non-JSON response: %s", response.text)
+                    raise ProviderException(f"Layanan AI mengembalikan respons tidak valid: {e}")
+
+                choices = data.get("choices", [])
+                if not choices:
+                    raise ProviderException("Layanan AI mengembalikan respons kosong.")
+
+                return self._parse_response(choices[0]["message"])
             except ProviderException:
                 raise
             except Exception as e:
                 logger.error("DeepSeek API call failed: %s", e, exc_info=True)
-                return ChatResponse(
-                    content=f"Maaf, terjadi kesalahan saat menghubungi layanan AI. Silakan coba lagi. (Error: {type(e).__name__})"
-                )
+                raise ProviderException(f"Gagal menghubungi layanan DeepSeek AI ({type(e).__name__}: {str(e)})")
 
     def _build_payload(self, kwargs: dict) -> dict:
         extra = {}
@@ -74,9 +89,21 @@ class DeepSeekProvider(LLMProvider):
         tool_calls = []
         if tool_calls_data:
             for tc in tool_calls_data:
+                func_data = tc.get("function", {})
+                raw_args = func_data.get("arguments", {})
+                args = {}
+                if isinstance(raw_args, str):
+                    try:
+                        args = json.loads(raw_args)
+                    except json.JSONDecodeError as e:
+                        logger.warning("Failed to parse tool arguments JSON from LLM: %s. Raw: %s", e, raw_args)
+                        args = {}
+                elif isinstance(raw_args, dict):
+                    args = raw_args
+
                 tool_calls.append(ToolCallInfo(
-                    id=tc["id"],
-                    name=tc["function"]["name"],
-                    arguments=json.loads(tc["function"]["arguments"])
+                    id=tc.get("id", "call_default"),
+                    name=func_data.get("name", ""),
+                    arguments=args
                 ))
         return ChatResponse(content=content, tool_calls=tool_calls)

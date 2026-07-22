@@ -32,6 +32,7 @@ class ChatMessageResponse(ChatMessageCreate):
 class ConversationCreate(BaseModel):
     store_id: uuid.UUID | None = None
     title: str | None = None
+    active_skill: str | None = None
 
 
 class ConversationResponse(BaseModel):
@@ -39,7 +40,14 @@ class ConversationResponse(BaseModel):
     user_id: uuid.UUID
     store_id: uuid.UUID | None
     title: str | None
+    active_skill: str | None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ConversationUpdate(BaseModel):
+    title: str | None = None
+    active_skill: str | None = None
+
