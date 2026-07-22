@@ -21,7 +21,7 @@ from app.modules.chat.service.tool_call_service import ToolCallService, json_ser
 MAX_TOOL_TURNS = 5
 
 
-def build_system_prompt(user: User, slots: dict[str, str] = None) -> str:
+def build_system_prompt(user: User, slots: dict[str, str] = None, active_skill: str | None = None) -> str:
     base = """Kamu adalah asisten bisnis untuk platform Food Waste Marketplace (Resurva).
 Kamu HANYA bisa membaca data dan memberikan rekomendasi. Kamu TIDAK bisa mengubah data apapun.
 Selalu jawab dalam Bahasa Indonesia secara ramah dan profesional. Gunakan angka konkret dari data yang tersedia.
@@ -95,6 +95,45 @@ Jika pengguna bertanya mengenai dari mana skor kesehatan/audit produk berasal, b
         if slot_lines:
             prompt += "\n\nKONTEKS VARIABEL SESI OBROLAN AKTIF:\n" + "\n".join(slot_lines)
 
+    if active_skill == "strategi":
+        prompt += (
+            "\n\nSKILL AKTIF: STRATEGI BISNIS & MARKETING 🧠\n"
+            "- Kamu saat ini berada dalam mode Asisten Strategi Bisnis.\n"
+            "- Tugas utama kamu adalah mencari dan memberikan strategi bisnis, pemasaran, efisiensi operasional, dan pengurangan limbah pangan (food waste) terbaik.\n"
+            "- Jawab dengan saran taktis, langkah-demi-langkah (actionable steps), dan pertimbangan lokal/nasional.\n"
+            "- Kamu memiliki akses ke tool 'web_search_and_crawl'. Gunakan tool ini jika memerlukan informasi luar seperti tren pasar terbaru, data kompetitor, regulasi pemerintah terkini, atau referensi industri eksternal.\n"
+            "- Jangan ragu melakukan pencarian web terlebih dahulu sebelum merumuskan strategi."
+        )
+    elif active_skill == "visualisasi":
+        prompt += (
+            "\n\nSKILL AKTIF: VISUALISASI DATA (CHARTS) 📊\n"
+            "- Kamu saat ini berada dalam mode Asisten Visualisasi Data.\n"
+            "- Tugas utama kamu adalah menyajikan data dalam bentuk grafik yang indah dan interaktif.\n"
+            "- Ketika pengguna meminta grafik, tren, perbandingan, atau ringkasan numerik, kamu WAJIB memanggil database tools yang relevan untuk mengambil data nyata (seperti sales_summary, carbon_summary, business_overview), lalu memformat data tersebut ke dalam blok kode khusus ```chart ... ```.\n"
+            "- Format blok chart HARUS berupa string JSON valid yang berisi konfigurasi Chart.js yang bisa langsung di-render oleh frontend. Contoh format:\n"
+            "```chart\n"
+            "{\n"
+            '  "type": "bar",\n'
+            '  "data": {\n'
+            '    "labels": ["Label A", "Label B"],\n'
+            '    "datasets": [\n'
+            "      {\n"
+            '        "label": "Nama Metrik",\n'
+            '        "data": [100, 200],\n'
+            '        "borderColor": "#0F3D2E",\n'
+            '        "backgroundColor": "rgba(15, 61, 46, 0.2)"\n'
+            "      }\n"
+            "    ]\n"
+            "  },\n"
+            '  "options": {\n'
+            '    "responsive": true\n'
+            "  }\n"
+            "}\n"
+            "```\n"
+            "- Tipe chart yang didukung oleh frontend adalah: 'bar', 'line', dan 'doughnut'.\n"
+            "- Selalu jelaskan singkat apa yang ditampilkan grafik tersebut di bawah blok grafik."
+        )
+
     return prompt
 
 
@@ -142,7 +181,7 @@ class ChatService:
         # Dynamically build system prompt
         from app.modules.chat.service.session_service import SessionService
         slots = await SessionService.get_slots(conversation_id)
-        system_prompt = build_system_prompt(user, slots)
+        system_prompt = build_system_prompt(user, slots, active_skill=conv.active_skill)
 
         llm = AIFactory.get_llm_provider()
 
@@ -177,24 +216,46 @@ class ChatService:
         allowed_tools = mcp_registry.get_tool_schemas_for_role(effective_role)
 
 
-        if intent_str == "GENERAL_CHAT":
+        if intent_str == "GENERAL_CHAT" and conv.active_skill != "strategi":
             tool_schemas = []
         else:
             # Expose the full suite of allowed tools for their role to enable entity resolution
             # and complex multi-step reasoning.
             tool_schemas = allowed_tools
 
+
+
+        # Build context-safe messages using sliding window (last 10 messages)
         messages = [{"role": "system", "content": system_prompt}]
-        for msg in conv.messages:
-            messages.append({"role": msg.role, "content": msg.content})
-        messages.append({"role": "user", "content": user_message})
+        history_pool = list(conv.messages)
+        # Keep last 10 messages
+        recent_history = history_pool[-10:] if len(history_pool) > 10 else history_pool
+
+        for msg in recent_history:
+            content = msg.content or ""
+            # Truncate oversized historical messages/tool outputs in older turns
+            if len(content) > 2000 and msg.role in ("tool", "assistant"):
+                content = content[:1500] + "\n... [Data historis dipotong untuk efisiensi konteks]"
+            messages.append({"role": msg.role, "content": content})
 
         for turn in range(MAX_TOOL_TURNS):
             kwargs = {}
             if tool_schemas:
                 kwargs["tools"] = tool_schemas
 
-            response = await llm.generate_chat_response(messages, **kwargs)
+            try:
+                response = await llm.generate_chat_response(messages, **kwargs)
+            except Exception as err:
+                err_str = str(err).lower()
+                if any(kw in err_str for kw in ["context", "token", "length", "1048565", "invalid_request_error"]):
+                    logger.warning("Context window exceeded (%s). Pruning history to minimal user prompt and retrying...", err)
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message}
+                    ]
+                    response = await llm.generate_chat_response(messages, **kwargs)
+                else:
+                    raise
 
             if not response.tool_calls:
                 final_content = response.content or ""
@@ -253,12 +314,16 @@ class ChatService:
                             }
                         )
                 
+                # Truncate large tool result payloads if they exceed 5KB before putting into LLM messages
+                tool_res_str = json.dumps(result, default=json_serial)
+                if len(tool_res_str) > 5000:
+                    tool_res_str = tool_res_str[:4000] + '... "info": "Hasil data dipotong untuk efisiensi"}'
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
-                    "content": json.dumps(result, default=json_serial)
+                    "content": tool_res_str
                 })
-
 
         fallback = "Maaf, saya tidak bisa menyelesaikan permintaan Anda dalam beberapa langkah. Silakan coba lagi."
         await self.conv_service.add_message(conversation_id, "assistant", fallback)

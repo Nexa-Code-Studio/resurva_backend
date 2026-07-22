@@ -19,11 +19,15 @@ class ReviewService:
     async def create_review(self, user_id: uuid.UUID, schema: ReviewCreate) -> Review:
         data = schema.model_dump()
         data["user_id"] = user_id
-        return await self.repository.create(data)
+        review = await self.repository.create(data)
+        await self.repository.db.refresh(review, attribute_names=["user", "product"])
+        return review
 
     async def get_store_reviews(self, store_id: uuid.UUID) -> Sequence[Review]:
         result = await self.repository.db.execute(
-            select(Review).filter(Review.store_id == store_id)
+            select(Review)
+            .options(selectinload(Review.user), selectinload(Review.product))
+            .filter(Review.store_id == store_id)
         )
         return result.scalars().all()
 

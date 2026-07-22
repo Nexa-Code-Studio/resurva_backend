@@ -43,6 +43,7 @@ class Store(Base, IdMixin, CreatedAtMixin):
         nullable=True
     )
     pickup_time: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    operating_hours: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     image_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     categories_data: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(String, nullable=True)

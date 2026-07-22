@@ -14,6 +14,7 @@ class StoreBase(BaseModel):
     is_active: bool = True
     category: str | None = Field(None, description="Store category")
     pickup_time: str | None = Field(None, description="Store pickup window hours")
+    operating_hours: str | None = Field(None, description="Daily store operating hours")
     image_url: str | None = Field(None, description="Publicly accessible logo or cover image URL")
     categories_data: str | None = Field(None, description="Serialized store custom categories")
     description: str | None = Field(None, description="Detailed description of the store")
@@ -37,6 +38,7 @@ class StoreUpdate(BaseModel):
     is_active: bool | None = None
     category: str | None = None
     pickup_time: str | None = None
+    operating_hours: str | None = None
     image_url: str | None = None
     categories_data: str | None = None
     description: str | None = None
@@ -82,6 +84,11 @@ class StoreResponse(StoreBase):
         from app.storage.factory import StorageFactory
         storage = StorageFactory.get_storage_provider()
         return storage.get_file_url(v)
+
+    @field_validator("pickup_time", mode="before")
+    @classmethod
+    def resolve_pickup_time(cls, v: str | None) -> str | None:
+        return v or "19:30 - 21:00 WIB"
 
 
 class EnterpriseRequestBase(BaseModel):

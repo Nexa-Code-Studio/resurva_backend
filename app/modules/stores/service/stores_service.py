@@ -167,20 +167,41 @@ class StoreService:
         page_size: int = 20,
         business_id: uuid.UUID | None = None,
         sort_by: str | None = None,
-        sort_order: str = "asc"
+        sort_order: str = "asc",
+        search: str | None = None
     ) -> tuple[Sequence[Store], int]:
-        filters = {}
-        if business_id is not None:
-            filters["business_id"] = business_id
+        from sqlalchemy import select, func
         from sqlalchemy.orm import selectinload
-        items, total = await self.repository.get_paginated(
-            page=page,
-            page_size=page_size,
-            filters=filters,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            options=[selectinload(Store.business), selectinload(Store.store_category)]
+        
+        query = select(Store).options(
+            selectinload(Store.business),
+            selectinload(Store.store_category)
         )
+        
+        if business_id is not None:
+            query = query.where(Store.business_id == business_id)
+            
+        if search:
+            query = query.where(Store.name.ilike(f"%{search}%"))
+            
+        if sort_by and hasattr(Store, sort_by):
+            col_attr = getattr(Store, sort_by)
+            if sort_order.lower() == "desc":
+                query = query.order_by(col_attr.desc())
+            else:
+                query = query.order_by(col_attr.asc())
+        else:
+            query = query.order_by(Store.created_at.desc())
+            
+        count_query = select(func.count()).select_from(query.subquery())
+        count_res = await self.db.execute(count_query)
+        total = count_res.scalar() or 0
+        
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+        
+        res = await self.db.execute(query)
+        items = res.scalars().all()
         await self._populate_store_stats(list(items))
         return items, total
 

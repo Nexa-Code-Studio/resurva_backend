@@ -44,18 +44,29 @@ class AnthropicProvider(LLMProvider):
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(self.base_url, json=payload, headers=headers, timeout=30.0)
+                response = await client.post(self.base_url, json=payload, headers=headers, timeout=45.0)
                 if response.status_code != 200:
-                    raise ProviderException(f"Anthropic error response: {response.text}")
-                data = response.json()
+                    err_detail = response.text
+                    try:
+                        err_json = response.json()
+                        if "error" in err_json and "message" in err_json["error"]:
+                            err_detail = err_json["error"]["message"]
+                    except Exception:
+                        pass
+                    raise ProviderException(f"Anthropic API Error (HTTP {response.status_code}): {err_detail}")
+
+                try:
+                    data = response.json()
+                except json.JSONDecodeError as e:
+                    logger.error("Anthropic returned non-JSON response: %s", response.text)
+                    raise ProviderException(f"Layanan AI mengembalikan respons tidak valid: {e}")
+
                 return self._parse_response(data)
             except ProviderException:
                 raise
             except Exception as e:
                 logger.error("Anthropic API call failed: %s", e, exc_info=True)
-                return ChatResponse(
-                    content=f"Maaf, terjadi kesalahan saat menghubungi layanan AI. Silakan coba lagi. (Error: {type(e).__name__})"
-                )
+                raise ProviderException(f"Gagal menghubungi layanan Anthropic ({type(e).__name__}: {str(e)})")
 
     def _build_payload(self, kwargs: dict) -> dict:
         extra = {}

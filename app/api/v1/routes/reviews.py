@@ -4,11 +4,23 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.modules.reviews.schemas import ReviewResponse, ReviewsSummaryResponse
+from app.modules.auth.service.access_context_service import AccessContextService
+from app.modules.users.models import User
+from app.modules.reviews.schemas import ReviewResponse, ReviewSummaryResponse, ReviewsSummaryResponse, ReviewCreate
 from app.modules.reviews.service.reviews_service import ReviewService
 from app.core.pagination import PaginatedResponse, PaginationMetadata
 
 router = APIRouter()
+
+
+@router.post("/", response_model=ReviewResponse)
+async def create_review(
+    schema: ReviewCreate,
+    current_user: User = Depends(AccessContextService.get_current_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = ReviewService(db)
+    return await service.create_review(user_id=current_user.id, schema=schema)
 
 
 @router.get("/summary", response_model=ReviewsSummaryResponse)

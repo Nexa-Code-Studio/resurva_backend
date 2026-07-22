@@ -22,6 +22,7 @@ class Conversation(Base, IdMixin, TimestampMixin):
         nullable=True
     )
     title: Mapped[str | None] = mapped_column(String, nullable=True)
+    active_skill: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationships
     messages: Mapped[list["ChatMessage"]] = relationship("ChatMessage", back_populates="conversation", cascade="all, delete-orphan")

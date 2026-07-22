@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
@@ -8,6 +8,7 @@ from app.modules.auth.service.access_context_service import AccessContextService
 from app.modules.users.models import User
 from app.modules.users.schemas import UserResponse, UserCreate, UserUpdate
 from app.modules.users.service.users_service import UserService
+from app.storage.factory import StorageFactory
 
 from app.core.pagination import PaginatedResponse, PaginationMetadata
 
@@ -16,10 +17,47 @@ router = APIRouter()
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(
-    current_user: TokenUser = Depends(AccessContextService.get_token_user)
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
+    db: AsyncSession = Depends(get_db_session)
 ):
     """Retrieve current authenticated user profile."""
-    return UserResponse.model_validate(current_user)
+    service = UserService(db)
+    user = await service.get_user(current_user.id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    schema: UserUpdate,
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
+    db: AsyncSession = Depends(get_db_session)
+):
+    """Update current user profile details."""
+    service = UserService(db)
+    return await service.update_user(current_user.id, schema)
+
+
+@router.post("/upload-image", status_code=status.HTTP_200_OK)
+async def upload_user_avatar(
+    file: UploadFile = File(...)
+):
+    """Upload user avatar photo to storage."""
+    content = await file.read()
+    storage = StorageFactory.get_storage_provider()
+    file_path = await storage.upload_file(
+        file_content=content,
+        filename=file.filename or "unknown",
+        folder="users"
+    )
+    file_url = storage.get_file_url(file_path)
+    return {
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "storage_path": file_path,
+        "access_url": file_url
+    }
 
 
 @router.get("/me/sustainability")

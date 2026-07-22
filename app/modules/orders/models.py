@@ -1,12 +1,13 @@
 import uuid
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, Index, Integer, String
+from sqlalchemy import ForeignKey, Index, Integer, String, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import OrderChannel, OrderStatus
-from app.db.base import Base, CreatedAtMixin, IdMixin
+from app.db.base import Base, CreatedAtMixin, IdMixin, UpdatedAtMixin
 
 if TYPE_CHECKING:
     from app.modules.carbon.models import CarbonLog
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from app.modules.users.models import User
     from app.modules.inventory.models import InventoryBatch
     from app.modules.products.models import ProductVariantOption
+    from app.modules.reviews.models import Review
 
 
 class Order(Base, IdMixin, CreatedAtMixin):
@@ -48,6 +50,23 @@ class Order(Base, IdMixin, CreatedAtMixin):
     order_discounts: Mapped[list["OrderDiscount"]] = relationship("OrderDiscount", back_populates="order", cascade="all, delete-orphan")
     carbon_logs: Mapped[list["CarbonLog"]] = relationship("CarbonLog", back_populates="order", cascade="all, delete-orphan")
     transactions: Mapped[list["Transaction"]] = relationship("Transaction", back_populates="order", cascade="all, delete-orphan")
+    review: Mapped[Optional["Review"]] = relationship("Review", back_populates="order", uselist=False, cascade="all, delete-orphan")
+
+    @property
+    def store_name(self) -> str:
+        return self.store.name if self.store else "Toko RESURVA"
+
+    @property
+    def store_address(self) -> str:
+        return self.store.address if self.store else "Jl. Semeru No. 45, Malang"
+
+    @property
+    def store_image_url(self) -> str | None:
+        if self.store and self.store.image_url:
+            from app.storage.factory import StorageFactory
+            storage = StorageFactory.get_storage_provider()
+            return storage.get_file_url(self.store.image_url)
+        return None
 
     @property
     def customer_name(self) -> str:
@@ -152,3 +171,25 @@ class OrderItemVariantOption(Base, IdMixin):
     # Relationships
     order_item: Mapped["OrderItem"] = relationship("OrderItem", back_populates="order_item_variant_options")
     variant_option: Mapped["ProductVariantOption | None"] = relationship("ProductVariantOption")
+
+
+class OrderEscrow(Base, IdMixin, CreatedAtMixin, UpdatedAtMixin):
+    __tablename__ = "order_escrows"
+
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False
+    )
+    store_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="held", nullable=False)  # held, released, refunded
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    order: Mapped["Order"] = relationship("Order")
+    store: Mapped["Store"] = relationship("Store")

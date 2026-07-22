@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.modules.products.models import Product
     from app.modules.stores.models import Store
     from app.modules.users.models import User
+    from app.modules.orders.models import Order
 
 
 class Review(Base, IdMixin, CreatedAtMixin):
@@ -27,6 +28,10 @@ class Review(Base, IdMixin, CreatedAtMixin):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
+    order_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("orders.id", ondelete="SET NULL"),
+        nullable=True
+    )
     description: Mapped[str] = mapped_column(String, nullable=False)
     rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-5
     label: Mapped[str | None] = mapped_column(String, nullable=True)  # Comma-separated or JSON list
@@ -37,6 +42,7 @@ class Review(Base, IdMixin, CreatedAtMixin):
     store: Mapped["Store"] = relationship("Store", back_populates="reviews")
     product: Mapped[Optional["Product"]] = relationship("Product", back_populates="reviews")
     user: Mapped["User"] = relationship("User", back_populates="reviews")
+    order: Mapped[Optional["Order"]] = relationship("Order", back_populates="review")
 
     @property
     def customer_name(self) -> str:
@@ -55,3 +61,7 @@ class Review(Base, IdMixin, CreatedAtMixin):
         if "product" in self.__dict__ and self.product is not None:
             return self.product.name
         return None
+
+    @property
+    def user_name(self) -> Optional[str]:
+        return self.user.username if self.user else None

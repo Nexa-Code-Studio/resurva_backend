@@ -17,6 +17,7 @@ from app.api.v1.routes import (
     carbon,
     analytics,
     verifications,
+    cart,
 )
 
 api_router = APIRouter()
@@ -30,6 +31,7 @@ api_router.include_router(stores.router, prefix="/stores", tags=["Stores"])
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
 api_router.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
 api_router.include_router(orders.router, prefix="/orders", tags=["Orders"])
+api_router.include_router(cart.router, prefix="/cart", tags=["Cart"])
 api_router.include_router(discounts.router, prefix="/discounts", tags=["Discounts"])
 api_router.include_router(wallets.router, prefix="/wallets", tags=["Wallets"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])

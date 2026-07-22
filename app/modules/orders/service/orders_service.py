@@ -37,7 +37,9 @@ class OrderService:
             .filter(Order.id == order_id)
             .options(
                 selectinload(Order.user),
+                selectinload(Order.store),
                 selectinload(Order.transactions),
+                selectinload(Order.review),
                 selectinload(Order.order_items).selectinload(OrderItem.product),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
@@ -52,7 +54,9 @@ class OrderService:
             .limit(limit)
             .options(
                 selectinload(Order.user),
+                selectinload(Order.store),
                 selectinload(Order.transactions),
+                selectinload(Order.review),
                 selectinload(Order.order_items).selectinload(OrderItem.product),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
@@ -65,6 +69,7 @@ class OrderService:
         page: int = 1,
         page_size: int = 20,
         store_id: uuid.UUID | None = None,
+        user_id: uuid.UUID | None = None,
         status: str | None = None,
         sort_by: str | None = None,
         sort_order: str = "asc"
@@ -75,7 +80,9 @@ class OrderService:
         # Apply options
         query = query.options(
             selectinload(Order.user),
+            selectinload(Order.store),
             selectinload(Order.transactions),
+            selectinload(Order.review),
             selectinload(Order.order_items).selectinload(OrderItem.product),
             selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
             selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
@@ -84,6 +91,10 @@ class OrderService:
         # Apply store_id filter
         if store_id is not None:
             query = query.where(Order.store_id == store_id)
+
+        # Apply user_id filter
+        if user_id is not None:
+            query = query.where(Order.user_id == user_id)
             
         # Apply status filter (comma separated values)
         if status:
@@ -222,11 +233,24 @@ class OrderService:
 
         await self.db.flush()
 
-        # If order is immediately COMPLETED or POS, perform batch deduction & financial logging
-        if order_status == OrderStatus.COMPLETED or schema.channel == OrderChannel.KASIR:
-            await self._process_order_deduction_and_finance(
+        # Release user's cart reservations since order is created
+        from app.modules.cart.models import CartReservation
+        from sqlalchemy import delete
+        await self.db.execute(
+            delete(CartReservation).where(CartReservation.user_id == user_id)
+        )
+
+        # Always deduct stock to secure the inventory batches immediately (Stock Lock)
+        await self._deduct_inventory(
+            order=order,
+            order_items_tuples=order_items_to_create,
+            now=now
+        )
+
+        # If order is paid, prepared, completed, or KASIR, perform financial logging
+        if order_status in [OrderStatus.PAID, OrderStatus.PREPARED, OrderStatus.COMPLETED] or schema.channel == OrderChannel.KASIR:
+            await self._process_finance_and_wallet(
                 order=order,
-                order_items_tuples=order_items_to_create,
                 payment_method=schema.payment_method or PaymentMethod.CASH,
                 payment_details=schema.payment_details,
                 now=now
@@ -244,12 +268,10 @@ class OrderService:
             )
         return reloaded_order
 
-    async def _process_order_deduction_and_finance(
+    async def _deduct_inventory(
         self,
         order: Order,
         order_items_tuples: list[tuple[OrderItem, uuid.UUID, int]],
-        payment_method: PaymentMethod,
-        payment_details: dict | None,
         now: datetime
     ):
         for order_item, product_id, qty in order_items_tuples:
@@ -265,12 +287,14 @@ class OrderService:
                     InventoryBatch.product_id == product_id,
                     InventoryBatch.store_id == order.store_id,
                     InventoryBatch.remaining_quantity > 0,
-                    InventoryBatch.expired_at > now,
                 )
-                .order_by(InventoryBatch.expired_at.asc())
             )
             batch_res = await self.db.execute(batch_query)
-            active_batches = batch_res.scalars().all()
+            all_batches = list(batch_res.scalars().all())
+
+            # Filter and sort in Python memory for timezone-safe date comparison
+            active_batches = [b for b in all_batches if b.expired_at > now]
+            active_batches.sort(key=lambda b: b.expired_at)
 
             needed = qty
             for b in active_batches:
@@ -303,6 +327,13 @@ class OrderService:
 
                 needed -= qty_deduct
 
+    async def _process_finance_and_wallet(
+        self,
+        order: Order,
+        payment_method: PaymentMethod,
+        payment_details: dict | None,
+        now: datetime
+    ):
         # Financial Transaction & Wallet logging
         platform_fee = 0 if order.channel == OrderChannel.KASIR else int(order.final_price * 0.1)
         net_amount = order.final_price - platform_fee
@@ -323,17 +354,81 @@ class OrderService:
         self.db.add(transaction)
         await self.db.flush()
 
-        wallet_type = WalletType.OFFLINE if payment_method == PaymentMethod.CASH else WalletType.DIGITAL
-        wallet_service = WalletService(self.db)
-        await wallet_service.add_funds(
-            store_id=order.store_id,
-            amount=net_amount,
-            wallet_type=wallet_type,
-            category=WalletTransactionCategory.CAT_SALES,
-            transaction_id=transaction_id,
-            note=f"Penjualan Order #{order.daily_code}",
-            transaction_date=now
+        # If it is online payment (not CASH) and not KASIR, route to OrderEscrow (Kantong Sementara)
+        is_online = (payment_method != PaymentMethod.CASH) and (order.channel != OrderChannel.KASIR)
+
+        if is_online:
+            from app.modules.orders.models import OrderEscrow
+            escrow = OrderEscrow(
+                order_id=order.id,
+                store_id=order.store_id,
+                amount=net_amount,
+                status="held"
+            )
+            self.db.add(escrow)
+        else:
+            wallet_type = WalletType.OFFLINE if payment_method == PaymentMethod.CASH else WalletType.DIGITAL
+            wallet_service = WalletService(self.db)
+            await wallet_service.add_funds(
+                store_id=order.store_id,
+                amount=net_amount,
+                wallet_type=wallet_type,
+                category=WalletTransactionCategory.CAT_SALES,
+                transaction_id=transaction_id,
+                note=f"Penjualan Order #{order.daily_code}",
+                transaction_date=now
+            )
+
+    async def _release_escrow_funds(self, order: Order, now: datetime):
+        from app.modules.orders.models import OrderEscrow
+        from app.modules.wallets.service.wallets_service import WalletService
+        from app.core.enums import WalletType, WalletTransactionCategory
+        from sqlalchemy import select
+
+        res = await self.db.execute(
+            select(OrderEscrow).where(
+                OrderEscrow.order_id == order.id,
+                OrderEscrow.status == "held"
+            )
         )
+        escrow = res.scalar_one_or_none()
+        if escrow:
+            escrow.status = "released"
+            escrow.released_at = now
+            self.db.add(escrow)
+
+            # Get the transaction to link the wallet transaction
+            tx_id = None
+            if order.transactions:
+                tx_id = order.transactions[0].id
+
+            # Add to the store's digital wallet
+            wallet_service = WalletService(self.db)
+            await wallet_service.add_funds(
+                store_id=order.store_id,
+                amount=escrow.amount,
+                wallet_type=WalletType.DIGITAL,
+                category=WalletTransactionCategory.CAT_SALES,
+                transaction_id=tx_id,
+                note=f"Pelepasan Escrow Order #{order.daily_code}",
+                transaction_date=now
+            )
+
+    async def _refund_escrow_funds(self, order: Order, now: datetime):
+        from app.modules.orders.models import OrderEscrow
+        from sqlalchemy import select
+
+        res = await self.db.execute(
+            select(OrderEscrow).where(
+                OrderEscrow.order_id == order.id,
+                OrderEscrow.status == "held"
+            )
+        )
+        escrow = res.scalar_one_or_none()
+        if escrow:
+            escrow.status = "refunded"
+            escrow.refunded_at = now
+            self.db.add(escrow)
 
     async def update_order_status(self, order_id: uuid.UUID, new_status: OrderStatus) -> Order:
         from datetime import UTC, datetime
@@ -346,55 +441,48 @@ class OrderService:
                 detail="Order not found"
             )
 
-        # Check if order hasn't deducted stock yet and is moving to ACCEPTED / PROCESSING / COMPLETED
+        # Check if order has deducted stock batches and if it's moving to PAID / CONFIRMED / PREPARED / COMPLETED
         has_batches = any(len(item.order_item_batches) > 0 for item in order.order_items)
-        is_advancing = new_status in [OrderStatus.ACCEPTED, OrderStatus.PROCESSING, OrderStatus.COMPLETED]
+        is_advancing = new_status in [OrderStatus.PAID, OrderStatus.CONFIRMED, OrderStatus.PREPARED, OrderStatus.COMPLETED]
 
-        if is_advancing and not has_batches:
-            # Check stock availability for all items before advancing
-            for item in order.order_items:
-                avail_stock = await self.get_available_stock(item.product_id, order.store_id)
-                if avail_stock < item.quantity:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Stok tidak mencukupi untuk mengonfirmasi pesanan '{item.product_name}'. Stok tersedia: {avail_stock}, dibutuhkan: {item.quantity}"
-                    )
-
-            # Perform FIFO batch deduction and finance logging
-            items_tuples = [(item, item.product_id, item.quantity) for item in order.order_items]
-            pm = PaymentMethod.CASH if order.transactions and order.transactions[0].payment_method == PaymentMethod.CASH else PaymentMethod.QRIS
-            await self._process_order_deduction_and_finance(
+        if is_advancing and not order.transactions:
+            # Perform finance logging
+            pm = PaymentMethod.QRIS
+            await self._process_finance_and_wallet(
                 order=order,
-                order_items_tuples=items_tuples,
                 payment_method=pm,
                 payment_details=None,
                 now=now
             )
 
-        # If order is CANCELLED and was previously deducted, restore stock to batches
-        elif new_status == OrderStatus.CANCELLED and has_batches:
-            for item in order.order_items:
-                product = await self.product_repo.get_by_id(item.product_id)
-                if product:
-                    product.stock += item.quantity
-                    self.db.add(product)
+        if new_status == OrderStatus.COMPLETED:
+            await self._release_escrow_funds(order, now)
 
-                for oi_batch in item.order_item_batches:
-                    if oi_batch.inventory_batch:
-                        oi_batch.inventory_batch.remaining_quantity += oi_batch.quantity
-                        self.db.add(oi_batch.inventory_batch)
+        elif new_status == OrderStatus.CANCELLED:
+            await self._refund_escrow_funds(order, now)
+            if has_batches:
+                for item in order.order_items:
+                    product = await self.product_repo.get_by_id(item.product_id)
+                    if product:
+                        product.stock += item.quantity
+                        self.db.add(product)
 
-                        inv_tx = InventoryTransaction(
-                            product_id=item.product_id,
-                            store_id=order.store_id,
-                            inventory_batch_id=oi_batch.inventory_batch_id,
-                            batch_tag=oi_batch.inventory_batch.batch_tag,
-                            type="stock_in",
-                            quantity=oi_batch.quantity,
-                            reason=f"Pembatalan Order #{order.daily_code}",
-                            reference=str(order.id)
-                        )
-                        self.db.add(inv_tx)
+                    for oi_batch in item.order_item_batches:
+                        if oi_batch.inventory_batch:
+                            oi_batch.inventory_batch.remaining_quantity += oi_batch.quantity
+                            self.db.add(oi_batch.inventory_batch)
+
+                            inv_tx = InventoryTransaction(
+                                product_id=item.product_id,
+                                store_id=order.store_id,
+                                inventory_batch_id=oi_batch.inventory_batch_id,
+                                batch_tag=oi_batch.inventory_batch.batch_tag,
+                                type="stock_in",
+                                quantity=oi_batch.quantity,
+                                reason=f"Pembatalan Order #{order.daily_code}",
+                                reference=str(order.id)
+                            )
+                            self.db.add(inv_tx)
 
         order.status = new_status
         self.db.add(order)

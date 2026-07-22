@@ -9,6 +9,7 @@ from app.modules.orders.schemas import OrderCreate, OrderResponse, OrderUpdateSt
 from app.modules.orders.service.orders_service import OrderService
 from app.modules.users.models import User
 
+from app.core.enums import UserRole
 from app.core.pagination import PaginatedResponse, PaginationMetadata
 
 router = APIRouter()
@@ -33,14 +34,27 @@ async def list_orders(
     status: str | None = None,
     sort_by: str | None = None,
     sort_order: str = "asc",
+    current_user: User = Depends(AccessContextService.get_current_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     """List orders."""
     service = OrderService(db)
+    
+    # Enforce role-based scoping
+    user_id_filter = None
+    store_id_filter = store_id
+    
+    if current_user.role == UserRole.CUSTOMER:
+        user_id_filter = current_user.id
+    elif current_user.role in (UserRole.SELLER, UserRole.OWNER):
+        if current_user.store_id:
+            store_id_filter = current_user.store_id
+            
     items, total = await service.list_orders_paginated(
         page=page,
         page_size=page_size,
-        store_id=store_id,
+        store_id=store_id_filter,
+        user_id=user_id_filter,
         status=status,
         sort_by=sort_by,
         sort_order=sort_order

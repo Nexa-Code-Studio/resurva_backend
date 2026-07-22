@@ -33,6 +33,9 @@ class User(Base, IdMixin, CreatedAtMixin):
     role: Mapped[UserRole] = mapped_column(SQLEnum(UserRole), default=UserRole.CUSTOMER, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    phone_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    photo_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Relationships
     business: Mapped[Optional["Business"]] = relationship("Business", back_populates="users")

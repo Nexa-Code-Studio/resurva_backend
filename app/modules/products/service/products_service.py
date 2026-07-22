@@ -15,15 +15,48 @@ class ProductService:
         self.repository = ProductRepository(db)
 
     async def get_product(self, product_id: uuid.UUID) -> Product | None:
+        from app.modules.inventory.models import InventoryBatch
+        from datetime import datetime, UTC
         result = await self.repository.db.execute(
             select(Product)
             .filter(Product.id == product_id)
             .options(
                 selectinload(Product.store),
+                selectinload(Product.inventory_batches),
                 selectinload(Product.variant_groups).selectinload(ProductVariantGroup.options),
             )
         )
-        return result.scalar_one_or_none()
+        product = result.scalar_one_or_none()
+        if product:
+            now = datetime.now(UTC)
+            from app.modules.cart.models import CartReservation
+            from sqlalchemy import func
+            res_query = select(func.coalesce(func.sum(CartReservation.quantity), 0)).where(
+                CartReservation.product_id == product.id,
+                CartReservation.expires_at > now
+            )
+            res_val = (await self.repository.db.execute(res_query)).scalar() or 0
+
+            if product.inventory_batches:
+                active_batches = [
+                    b for b in product.inventory_batches
+                    if b.surplus_starts_at
+                    and b.surplus_starts_at <= now
+                    and b.expired_at > now
+                    and b.remaining_quantity > 0
+                ]
+                if active_batches:
+                    product.stock = max(0, sum(b.remaining_quantity for b in active_batches) - res_val)
+                else:
+                    unexpired_batches = [
+                        b for b in product.inventory_batches
+                        if b.expired_at > now
+                        and b.remaining_quantity > 0
+                    ]
+                    product.stock = max(0, sum(b.remaining_quantity for b in unexpired_batches) - res_val)
+            else:
+                product.stock = max(0, product.stock - res_val)
+        return product
 
     async def list_products(self, skip: int = 0, limit: int = 100) -> Sequence[Product]:
         return await self.repository.get_multi(skip=skip, limit=limit)
@@ -35,7 +68,8 @@ class ProductService:
         store_id: uuid.UUID | None = None,
         sort_by: str | None = None,
         sort_order: str = "asc",
-        flash_sale: bool = False
+        flash_sale: bool = False,
+        search: str | None = None
     ) -> tuple[Sequence[Product], int]:
         from app.modules.inventory.models import InventoryBatch
         from sqlalchemy import func, select
@@ -43,11 +77,15 @@ class ProductService:
         
         query = select(Product).options(
             selectinload(Product.store),
+            selectinload(Product.inventory_batches),
             selectinload(Product.variant_groups).selectinload(ProductVariantGroup.options),
         )
         
         if store_id is not None:
             query = query.where(Product.store_id == store_id)
+
+        if search:
+            query = query.where(Product.name.ilike(f"%{search}%"))
             
         if flash_sale:
             now = datetime.now(UTC)
@@ -75,6 +113,36 @@ class ProductService:
 
         res = await self.repository.db.execute(query)
         items = res.scalars().all()
+
+        now = datetime.now(UTC)
+        from app.modules.cart.models import CartReservation
+        from sqlalchemy import func
+        for product in items:
+            res_query = select(func.coalesce(func.sum(CartReservation.quantity), 0)).where(
+                CartReservation.product_id == product.id,
+                CartReservation.expires_at > now
+            )
+            res_val = (await self.repository.db.execute(res_query)).scalar() or 0
+
+            if product.inventory_batches:
+                if flash_sale:
+                    active_batches = [
+                        b for b in product.inventory_batches
+                        if b.surplus_starts_at
+                        and b.surplus_starts_at <= now
+                        and b.expired_at > now
+                        and b.remaining_quantity > 0
+                    ]
+                    product.stock = max(0, sum(b.remaining_quantity for b in active_batches) - res_val)
+                else:
+                    unexpired_batches = [
+                        b for b in product.inventory_batches
+                        if b.expired_at > now
+                        and b.remaining_quantity > 0
+                    ]
+                    product.stock = max(0, sum(b.remaining_quantity for b in unexpired_batches) - res_val)
+            else:
+                product.stock = max(0, product.stock - res_val)
 
         return items, total
 

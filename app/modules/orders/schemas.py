@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from app.modules.reviews.schemas import ReviewResponse
 from app.core.enums import OrderChannel, OrderStatus, PaymentMethod
 
 
@@ -53,9 +55,13 @@ class OrderResponse(OrderBase):
     created_at: datetime
     order_items: list[OrderItemResponse]
     customer_name: str | None = None
+    store_name: str | None = None
+    store_address: str | None = None
+    store_image_url: str | None = None
     payment_method: str | None = None
     order_type: str | None = None
     notes: str | None = None
     daily_code: str | None = None
+    review: Optional["ReviewResponse"] = None
 
     model_config = ConfigDict(from_attributes=True)
