@@ -11,11 +11,11 @@ from app.modules.wallets.models import Wallet
 
 logger = logging.getLogger("app.db.seeders.business")
 
-# Bounding box area Malang dari koordinat yang diberikan pengguna
-_LAT_MIN = -7.984444
-_LAT_MAX = -7.857874
-_LNG_MIN = 112.501505
-_LNG_MAX = 112.645326
+# Bounding box area Surakarta dari koordinat yang diberikan pengguna
+_LAT_MIN = -7.577204
+_LAT_MAX = -7.541387
+_LNG_MIN = 110.832934
+_LNG_MAX = 110.879369
 
 _rng = random.Random(99)
 
@@ -103,8 +103,8 @@ class BusinessSeeder:
                     id=s_id,
                     business_id=b_id,
                     name=f"{b_name} - Cabang {s_idx + 1}",
-                    address=f"Jl. Malang Raya No. {b_idx * 10 + s_idx + 1}",
-                    city="Malang",
+                    address=f"Jl. Slamet Riyadi No. {b_idx * 10 + s_idx + 1}",
+                    city="Surakarta",
                     rating=round(_rng.uniform(4.0, 5.0), 1),
                     is_active=True,
                     longitude=_rand_lng(),
@@ -112,7 +112,8 @@ class BusinessSeeder:
                     store_category=cat_map[cat],
                     pickup_time=p_win,
                     image_url=image_url,
-                    categories_data=json.dumps(default_categories)
+                    categories_data=json.dumps(default_categories),
+                    operating_hours="08:00 - 21:00"
                 )
                 session.add(store)
 

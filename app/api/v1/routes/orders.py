@@ -171,7 +171,15 @@ async def stream_orders(
             sse_manager.remove_queue(str(store_id), queue)
             raise
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive"
+        }
+    )
 
 
 @router.get("/{order_id}", response_model=OrderResponse)

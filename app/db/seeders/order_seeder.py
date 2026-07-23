@@ -85,8 +85,8 @@ class OrderSeeder:
         daily_summaries_data = {}
         monthly_summaries_data = {}
 
-        status_choices = [OrderStatus.COMPLETED, OrderStatus.PAID, OrderStatus.CANCELLED, OrderStatus.PENDING]
-        status_weights = [0.90, 0.05, 0.03, 0.02]
+        status_choices = [OrderStatus.COMPLETED]
+        status_weights = [1.0]
         payment_choices = [PaymentMethod.QRIS, PaymentMethod.GOPAY, PaymentMethod.OVO, PaymentMethod.CASH, PaymentMethod.TRANSFER]
 
         def get_product_lifespan(prod):

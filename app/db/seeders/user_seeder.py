@@ -86,6 +86,11 @@ class UserSeeder:
         local_random = random.Random(42)
         generated_usernames = set()
 
+        _LAT_MIN = -7.577204
+        _LAT_MAX = -7.541387
+        _LNG_MIN = 110.832934
+        _LNG_MAX = 110.879369
+
         for idx in range(50):
             while True:
                 f_name = local_random.choice(first_names)
@@ -95,12 +100,23 @@ class UserSeeder:
                     generated_usernames.add(username)
                     break
 
+            lat = round(local_random.uniform(_LAT_MIN, _LAT_MAX), 6)
+            lng = round(local_random.uniform(_LNG_MIN, _LNG_MAX), 6)
+            address = f"Jl. Slamet Riyadi No. {idx + 100}, Surakarta"
+            phone = f"+628123456{idx:03d}"
+            full_name = f"{f_name} {l_name}"
+
             users.append(User(
                 id=customer_ids[idx],
                 username=username,
                 email=f"{username}@example.com",
                 password=hashed_password,
-                role=UserRole.CUSTOMER
+                role=UserRole.CUSTOMER,
+                full_name=full_name,
+                phone_number=phone,
+                default_address=address,
+                default_latitude=lat,
+                default_longitude=lng
             ))
 
         # 6. Add all to session

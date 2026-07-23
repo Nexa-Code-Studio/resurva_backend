@@ -19,6 +19,17 @@ async def clear_database(session) -> None:
     """Truncates all tables to ensure clean seed data."""
     logger.info("Clearing existing data from database...")
     tables = [
+        "refresh_tokens",
+        "partner_verifications",
+        "withdrawal_requests",
+        "cart_reservations",
+        "log_systems",
+        "order_item_variant_options",
+        "product_variant_options",
+        "product_variant_groups",
+        "inventory_transactions",
+        "order_escrows",
+        "enterprise_requests",
         "order_item_batches",
         "chat_tool_calls",
         "chat_messages",

@@ -121,6 +121,16 @@ class ProductSeeder:
                 img_num = (t_idx % 10) + 1
                 image_url = f"/uploads/products/{img_num}.png"
 
+                prefix = "PRD"
+                pname_lower = name.lower()
+                if "roti" in pname_lower or "kue" in pname_lower or "bread" in pname_lower or "croissant" in pname_lower or "brownies" in pname_lower or "donat" in pname_lower or "cinnamon" in pname_lower or "muffin" in pname_lower:
+                    prefix = "BKR"
+                elif "kopi" in pname_lower or "teh" in pname_lower or "jus" in pname_lower or "drink" in pname_lower or "susu" in pname_lower:
+                    prefix = "MNM"
+                else:
+                    prefix = "FOD"
+                sku = f"{prefix}-{100 + s_idx * 10 + t_idx}"
+
                 p = Product(
                     store_id=store_id,
                     name=name,
@@ -132,7 +142,13 @@ class ProductSeeder:
                     sold=0,
                     image_url=image_url,
                     expiry_time=exp_hours,
-                    expired_at=datetime.now(UTC) + timedelta(hours=exp_hours)
+                    expired_at=datetime.now(UTC) + timedelta(hours=exp_hours),
+                    sku=sku,
+                    weight=0.1,
+                    is_published=True,
+                    auto_surplus_enabled=False,
+                    surplus_trigger_hours=0,
+                    supplier_lead_time_days=2
                 )
                 products.append(p)
                 session.add(p)
