@@ -13,6 +13,7 @@ from app.modules.analytics.schemas import (
     EnterpriseWrappedResponse,
     EnterpriseWasteImpactAnalyticsResponse,
     SuperadminDashboardStatsResponse,
+    AIInsightsResponse,
 )
 from app.modules.analytics.service.analytics_service import AnalyticsService
 
@@ -74,10 +75,16 @@ async def get_enterprise_wrapped(
 @router.get("/enterprise/waste-impact", response_model=EnterpriseWasteImpactAnalyticsResponse)
 async def get_enterprise_waste_impact_analytics(
     business_id: uuid.UUID = Query(..., description="Business UUID"),
+    store_id: uuid.UUID | None = Query(None, description="Filter by Store UUID"),
+    period: str = Query("6bulan", description="6bulan, tahun_ini, or semua"),
     db: AsyncSession = Depends(get_db_session),
 ):
     service = AnalyticsService(db)
-    return await service.get_enterprise_waste_impact_analytics(business_id=business_id)
+    return await service.get_enterprise_waste_impact_analytics(
+        business_id=business_id,
+        store_id=store_id,
+        period=period
+    )
 
 
 
@@ -88,11 +95,12 @@ async def get_financial_analytics(
     store_id: uuid.UUID = Query(..., description="Store UUID"),
     timeframe: str = Query("weekly", description="weekly or monthly"),
     tx_type: str = Query("in", description="in or out for category breakdown"),
+    date_offset: int = Query(0, description="Offset multiplier"),
     db: AsyncSession = Depends(get_db_session),
 ):
     service = AnalyticsService(db)
     return await service.get_finance_analytics(
-        store_id=store_id, timeframe=timeframe, tx_type=tx_type
+        store_id=store_id, timeframe=timeframe, tx_type=tx_type, date_offset=date_offset
     )
 
 
@@ -125,3 +133,13 @@ async def get_superadmin_dashboard_stats(
 ):
     service = AnalyticsService(db)
     return await service.get_superadmin_stats()
+
+
+@router.get("/ai-insights", response_model=AIInsightsResponse)
+async def get_ai_insights(
+    store_id: uuid.UUID = Query(..., description="Store UUID"),
+    db: AsyncSession = Depends(get_db_session),
+):
+    service = AnalyticsService(db)
+    return await service.get_ai_insights(store_id=store_id)
+

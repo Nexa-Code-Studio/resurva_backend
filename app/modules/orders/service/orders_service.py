@@ -16,7 +16,7 @@ from app.core.enums import (
     WalletType,
 )
 from app.modules.inventory.models import InventoryBatch, InventoryTransaction
-from app.modules.orders.models import Order, OrderItem, OrderItemBatch
+from app.modules.orders.models import Order, OrderItem, OrderItemBatch, OrderDiscount
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schemas import OrderCreate
 from app.modules.products.repository import ProductRepository
@@ -43,6 +43,7 @@ class OrderService:
                 selectinload(Order.order_items).selectinload(OrderItem.product),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
+                selectinload(Order.order_discounts).selectinload(OrderDiscount.discount),
             )
         )
         return result.scalar_one_or_none()
@@ -60,6 +61,7 @@ class OrderService:
                 selectinload(Order.order_items).selectinload(OrderItem.product),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
                 selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
+                selectinload(Order.order_discounts).selectinload(OrderDiscount.discount),
             )
         )
         return result.scalars().all()
@@ -86,6 +88,7 @@ class OrderService:
             selectinload(Order.order_items).selectinload(OrderItem.product),
             selectinload(Order.order_items).selectinload(OrderItem.order_item_variant_options),
             selectinload(Order.order_items).selectinload(OrderItem.order_item_batches).selectinload(OrderItemBatch.inventory_batch),
+            selectinload(Order.order_discounts).selectinload(OrderDiscount.discount),
         )
         
         # Apply store_id filter
@@ -190,6 +193,27 @@ class OrderService:
 
         final_price = total_price - total_discount
 
+        voucher_discount_amount = 0
+        discount_obj = None
+        if schema.discount_id:
+            from app.modules.discounts.models import Discount
+            from app.core.enums import DiscountType
+            discount_obj = await self.db.get(Discount, schema.discount_id)
+            if discount_obj:
+                # Check min purchase constraint on subtotal (final_price before voucher)
+                if final_price >= discount_obj.min_purchase:
+                    if discount_obj.type == DiscountType.PERCENTAGE:
+                        calc_discount = (final_price * discount_obj.value) // 100
+                        if discount_obj.max_discount:
+                            calc_discount = min(calc_discount, discount_obj.max_discount)
+                        voucher_discount_amount = calc_discount
+                    else:
+                        voucher_discount_amount = discount_obj.value
+
+                    voucher_discount_amount = min(voucher_discount_amount, final_price)
+                    total_discount += voucher_discount_amount
+                    final_price -= voucher_discount_amount
+
         # Generate daily code: {weekday_prefix}-{count_today + 1}
         from datetime import UTC, datetime, time
         now = datetime.now(UTC)
@@ -230,6 +254,16 @@ class OrderService:
         for order_item, product_id, qty in order_items_to_create:
             order_item.order_id = order.id
             self.db.add(order_item)
+
+        # Link voucher discount if applied
+        if discount_obj and voucher_discount_amount > 0:
+            from app.modules.orders.models import OrderDiscount
+            order_discount = OrderDiscount(
+                order_id=order.id,
+                discount_id=discount_obj.id,
+                discount_amount=voucher_discount_amount
+            )
+            self.db.add(order_discount)
 
         await self.db.flush()
 

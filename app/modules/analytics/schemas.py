@@ -161,4 +161,11 @@ class SuperadminDashboardStatsResponse(BaseModel):
     pending_enterprise_verifications: int
 
 
+class AIInsightsResponse(BaseModel):
+    sales_stock_optimization: str
+    surplus_conversion: str
+    customer_sentiment: str
+
+
+
 

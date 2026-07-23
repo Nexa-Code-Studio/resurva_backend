@@ -32,7 +32,7 @@ async def main():
             print("Resetting stores.pickup_time to default surplus pickup window...")
             await conn.execute(text("UPDATE stores SET pickup_time = '19:30 - 21:00 WIB';"))
 
-        # Modify users table (add full_name, phone_number, photo_url)
+        # Modify users table (add full_name, phone_number, photo_url, default_address)
         res_users = await conn.execute(text("select column_name from information_schema.columns where table_name = 'users'"))
         users_cols = {r[0] for r in res_users.all()}
         if 'full_name' not in users_cols:
@@ -46,6 +46,15 @@ async def main():
         if 'photo_url' not in users_cols:
             print("Adding users.photo_url...")
             await conn.execute(text("ALTER TABLE users ADD COLUMN photo_url VARCHAR;"))
+        if 'default_address' not in users_cols:
+            print("Adding users.default_address...")
+            await conn.execute(text("ALTER TABLE users ADD COLUMN default_address VARCHAR;"))
+        if 'default_latitude' not in users_cols:
+            print("Adding users.default_latitude...")
+            await conn.execute(text("ALTER TABLE users ADD COLUMN default_latitude FLOAT;"))
+        if 'default_longitude' not in users_cols:
+            print("Adding users.default_longitude...")
+            await conn.execute(text("ALTER TABLE users ADD COLUMN default_longitude FLOAT;"))
         
         # 1. Modify products table
         # Check if columns already exist first

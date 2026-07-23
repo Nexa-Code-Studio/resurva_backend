@@ -18,11 +18,13 @@ from app.api.v1.routes import (
     analytics,
     verifications,
     cart,
+    logs,
 )
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+api_router.include_router(logs.router, prefix="/logs", tags=["System Logs"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(business.router, prefix="/businesses", tags=["Businesses"])
 api_router.include_router(business.router, prefix="/business", tags=["Businesses"])

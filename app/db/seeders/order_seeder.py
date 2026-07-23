@@ -77,7 +77,7 @@ class OrderSeeder:
             carbon_rates[p.id] = round(total_c, 4)
 
         # 2. Seeding timeline
-        days_history = 365
+        days_history = 30
         end_date = date.today()
         start_date = end_date - timedelta(days=days_history)
 

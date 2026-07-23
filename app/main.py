@@ -31,6 +31,7 @@ app = FastAPI(
 )
 
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from app.core.middleware import SystemLoggingMiddleware
 
 # Set up Allowed Hosts middleware
 allowed_hosts = settings.ALLOWED_HOSTS if isinstance(settings.ALLOWED_HOSTS, list) else [h.strip() for h in settings.ALLOWED_HOSTS.split(",")]
@@ -38,6 +39,9 @@ app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=allowed_hosts,
 )
+
+# Register System Logging Middleware
+app.add_middleware(SystemLoggingMiddleware)
 
 # Set up CORS middleware
 cors_origins = settings.CORS_ORIGINS if isinstance(settings.CORS_ORIGINS, list) else [o.strip() for o in settings.CORS_ORIGINS.split(",")]

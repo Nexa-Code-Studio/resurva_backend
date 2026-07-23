@@ -1,10 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Request, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
-from app.core.enums import WalletType
+from app.core.enums import WalletType, UserRole
 from app.modules.wallets.schemas import (
     WalletResponse,
     WalletTransactionResponse,
@@ -14,6 +14,9 @@ from app.modules.wallets.schemas import (
 )
 from app.modules.wallets.service.wallets_service import WalletService
 from app.core.pagination import PaginatedResponse, PaginationMetadata
+from app.modules.auth.service.access_context_service import AccessContextService, TokenUser
+from app.modules.logs.schemas import LogCreate
+from app.modules.logs.service import LogSystemService
 
 router = APIRouter()
 
@@ -55,6 +58,8 @@ async def get_business_hq_transactions(
 async def create_business_hq_transaction(
     business_id: uuid.UUID,
     schema: WalletTransactionCreate,
+    request: Request,
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     service = WalletService(db)
@@ -67,8 +72,42 @@ async def create_business_hq_transaction(
         date=schema.transaction_date
     )
     await db.commit()
-    return tx
+    
+    try:
+        log_service = LogSystemService(db)
+        platform = "web_enterprise"
+        if current_user.role == UserRole.ADMIN:
+            platform = "web_superadmin"
+        elif current_user.role == UserRole.CUSTOMER:
+            platform = "mobile_client"
+        elif current_user.role == UserRole.SELLER:
+            platform = "web_merchant"
 
+        custom_platform = request.headers.get("X-Platform")
+        if custom_platform in ["mobile_client", "web_merchant", "web_enterprise", "web_superadmin", "system"]:
+            platform = custom_platform
+
+        await log_service.create_log(
+            schema=LogCreate(
+                platform=platform,
+                severity="INFO",
+                event=f"Created HQ wallet transaction: {tx.type.value} ({tx.category.value}) - Amount: {tx.amount}",
+                user_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                details={
+                    "transaction_id": str(tx.id),
+                    "amount": float(tx.amount),
+                    "type": tx.type.value,
+                    "category": tx.category.value,
+                    "business_id": str(business_id)
+                }
+            ),
+            user_id=current_user.id
+        )
+    except Exception:
+        pass
+        
+    return tx
 
 
 @router.get("/store/{store_id}/balances")
@@ -93,7 +132,6 @@ async def get_store_wallet_transactions(
     db: AsyncSession = Depends(get_db_session)
 ):
     service = WalletService(db)
-    # Return unified transactions for digital, offline, or all wallets of the store
     return list(await service.get_store_all_transactions(store_id, type))
 
 
@@ -101,6 +139,8 @@ async def get_store_wallet_transactions(
 async def create_store_manual_transaction(
     store_id: uuid.UUID,
     schema: WalletTransactionCreate,
+    request: Request,
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     service = WalletService(db)
@@ -114,23 +154,89 @@ async def create_store_manual_transaction(
         notes=schema.note
     )
     await db.commit()
+    
+    try:
+        log_service = LogSystemService(db)
+        platform = "web_merchant"
+        if current_user.role == UserRole.ADMIN:
+            platform = "web_superadmin"
+        elif current_user.role == UserRole.CUSTOMER:
+            platform = "mobile_client"
+        elif current_user.role == UserRole.OWNER:
+            platform = "web_enterprise"
+
+        custom_platform = request.headers.get("X-Platform")
+        if custom_platform in ["mobile_client", "web_merchant", "web_enterprise", "web_superadmin", "system"]:
+            platform = custom_platform
+
+        await log_service.create_log(
+            schema=LogCreate(
+                platform=platform,
+                severity="INFO",
+                event=f"Created manual store transaction: {tx.type.value} - Amount: {tx.amount}",
+                user_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                details={
+                    "transaction_id": str(tx.id),
+                    "amount": float(tx.amount),
+                    "type": tx.type.value,
+                    "store_id": str(store_id)
+                }
+            ),
+            user_id=current_user.id
+        )
+    except Exception:
+        pass
+        
     return tx
 
 
 @router.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_manual_transaction(
     transaction_id: uuid.UUID,
+    request: Request,
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     service = WalletService(db)
     await service.delete_manual_transaction(transaction_id)
     await db.commit()
+    
+    try:
+        log_service = LogSystemService(db)
+        platform = "web_merchant"
+        if current_user.role == UserRole.ADMIN:
+            platform = "web_superadmin"
+        elif current_user.role == UserRole.CUSTOMER:
+            platform = "mobile_client"
+        elif current_user.role == UserRole.OWNER:
+            platform = "web_enterprise"
+
+        custom_platform = request.headers.get("X-Platform")
+        if custom_platform in ["mobile_client", "web_merchant", "web_enterprise", "web_superadmin", "system"]:
+            platform = custom_platform
+
+        await log_service.create_log(
+            schema=LogCreate(
+                platform=platform,
+                severity="INFO",
+                event=f"Deleted manual transaction #{transaction_id}",
+                user_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                details={"transaction_id": str(transaction_id)}
+            ),
+            user_id=current_user.id
+        )
+    except Exception:
+        pass
 
 
 @router.post("/store/{store_id}/withdrawals", response_model=WithdrawalRequestResponse)
 async def submit_store_withdrawal(
     store_id: uuid.UUID,
     schema: WithdrawalRequestCreate,
+    request: Request,
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     service = WalletService(db)
@@ -143,6 +249,40 @@ async def submit_store_withdrawal(
         save_account=schema.save_account
     )
     await db.commit()
+    
+    try:
+        log_service = LogSystemService(db)
+        platform = "web_merchant"
+        if current_user.role == UserRole.ADMIN:
+            platform = "web_superadmin"
+        elif current_user.role == UserRole.CUSTOMER:
+            platform = "mobile_client"
+        elif current_user.role == UserRole.OWNER:
+            platform = "web_enterprise"
+
+        custom_platform = request.headers.get("X-Platform")
+        if custom_platform in ["mobile_client", "web_merchant", "web_enterprise", "web_superadmin", "system"]:
+            platform = custom_platform
+
+        await log_service.create_log(
+            schema=LogCreate(
+                platform=platform,
+                severity="INFO",
+                event=f"Submitted withdrawal request of {schema.amount} for store {store_id}",
+                user_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                details={
+                    "withdrawal_id": str(payout.id),
+                    "amount": float(schema.amount),
+                    "store_id": str(store_id),
+                    "bank_name": schema.bank_name
+                }
+            ),
+            user_id=current_user.id
+        )
+    except Exception:
+        pass
+        
     return payout
 
 
@@ -158,11 +298,42 @@ async def get_store_withdrawals(
 @router.post("/withdrawals/{withdrawal_id}/cancel", response_model=WithdrawalRequestResponse)
 async def cancel_store_withdrawal(
     withdrawal_id: uuid.UUID,
+    request: Request,
+    current_user: TokenUser = Depends(AccessContextService.get_token_user),
     db: AsyncSession = Depends(get_db_session)
 ):
     service = WalletService(db)
     payout = await service.cancel_withdrawal(withdrawal_id)
     await db.commit()
+    
+    try:
+        log_service = LogSystemService(db)
+        platform = "web_merchant"
+        if current_user.role == UserRole.ADMIN:
+            platform = "web_superadmin"
+        elif current_user.role == UserRole.CUSTOMER:
+            platform = "mobile_client"
+        elif current_user.role == UserRole.OWNER:
+            platform = "web_enterprise"
+
+        custom_platform = request.headers.get("X-Platform")
+        if custom_platform in ["mobile_client", "web_merchant", "web_enterprise", "web_superadmin", "system"]:
+            platform = custom_platform
+
+        await log_service.create_log(
+            schema=LogCreate(
+                platform=platform,
+                severity="INFO",
+                event=f"Cancelled withdrawal request #{withdrawal_id}",
+                user_email=current_user.email,
+                ip_address=request.client.host if request.client else None,
+                details={"withdrawal_id": str(withdrawal_id)}
+            ),
+            user_id=current_user.id
+        )
+    except Exception:
+        pass
+        
     return payout
 
 

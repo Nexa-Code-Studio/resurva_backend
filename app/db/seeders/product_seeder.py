@@ -168,6 +168,50 @@ class ProductSeeder:
             ))
             session.add(discounts[-1])
 
+            # Default Discount 1: DISKON10K (Fixed Rp10.000, min purchase Rp20.000)
+            discounts.append(Discount(
+                store_id=store_id,
+                name="Diskon Rp10.000",
+                type=DiscountType.FIXED,
+                value=10000,
+                min_purchase=20000,
+                quota=100000,
+                code=f"DISKON10K_{s_idx + 1}",
+                start_time=datetime.now(UTC) - timedelta(days=2000),
+                end_time=datetime.now(UTC) + timedelta(days=2000)
+            ))
+            session.add(discounts[-1])
+
+            # Default Discount 2: DISKON20 (20%, max Rp15.000, min purchase Rp30.000)
+            discounts.append(Discount(
+                store_id=store_id,
+                name="Diskon 20%",
+                type=DiscountType.PERCENTAGE,
+                value=20,
+                max_discount=15000,
+                min_purchase=30000,
+                quota=100000,
+                code=f"DISKON20_{s_idx + 1}",
+                start_time=datetime.now(UTC) - timedelta(days=2000),
+                end_time=datetime.now(UTC) + timedelta(days=2000)
+            ))
+            session.add(discounts[-1])
+
+            # Default Discount 3: HEMAT50 (50%, max Rp25.000, min purchase Rp50.000)
+            discounts.append(Discount(
+                store_id=store_id,
+                name="Diskon 50% Hemat",
+                type=DiscountType.PERCENTAGE,
+                value=50,
+                max_discount=25000,
+                min_purchase=50000,
+                quota=100000,
+                code=f"HEMAT50_{s_idx + 1}",
+                start_time=datetime.now(UTC) - timedelta(days=2000),
+                end_time=datetime.now(UTC) + timedelta(days=2000)
+            ))
+            session.add(discounts[-1])
+
         await session.flush()
         logger.info(f"Successfully seeded {len(products)} products, {len(prod_ing_maps)} links, and {len(discounts)} discounts.")
 

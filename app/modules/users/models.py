@@ -1,7 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Enum as SQLEnum, Boolean
+from sqlalchemy import Enum as SQLEnum, Boolean, Float
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +36,9 @@ class User(Base, IdMixin, CreatedAtMixin):
     full_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     photo_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    default_address: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    default_latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    default_longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     # Relationships
     business: Mapped[Optional["Business"]] = relationship("Business", back_populates="users")
