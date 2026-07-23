@@ -138,6 +138,8 @@ async def test_complete_flow():
         assert "daily_code" in order_data
         assert order_data["daily_code"] is not None
         assert "-" in order_data["daily_code"]
+        assert order_data["store_latitude"] == -6.91
+        assert order_data["store_longitude"] == 107.61
 
         # 9. Verify Product stock was reduced
         resp = await ac.get(f"/api/v1/products/{product_id}")

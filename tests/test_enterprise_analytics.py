@@ -23,6 +23,7 @@ async def test_enterprise_waste_impact_analytics_flow():
         await db.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+        # Test without specific store and period filters
         res = await client.get(f"/api/v1/analytics/enterprise/waste-impact?business_id={b_id}")
         assert res.status_code == 200, res.text
         data = res.json()
@@ -31,3 +32,20 @@ async def test_enterprise_waste_impact_analytics_flow():
         assert "co2e_reduced_kg" in data
         assert "branch_comparison" in data
         assert "emission_trend" in data
+
+        # Test with store_id and period=tahun_ini filter
+        res_filter = await client.get(
+            f"/api/v1/analytics/enterprise/waste-impact?business_id={b_id}&store_id={s1.id}&period=tahun_ini"
+        )
+        assert res_filter.status_code == 200, res_filter.text
+        data_filter = res_filter.json()
+        assert data_filter["financial_loss_avoided"] >= 0
+        assert len(data_filter["emission_trend"]) == 12  # tahun_ini returns 12 months
+
+        # Test with period=semua
+        res_semua = await client.get(
+            f"/api/v1/analytics/enterprise/waste-impact?business_id={b_id}&period=semua"
+        )
+        assert res_semua.status_code == 200, res_semua.text
+        data_semua = res_semua.json()
+        assert len(data_semua["emission_trend"]) == 5  # semua returns past 5 years

@@ -17,6 +17,9 @@ class UserBase(BaseModel):
     full_name: str | None = None
     phone_number: str | None = None
     photo_url: str | None = None
+    default_address: str | None = None
+    default_latitude: float | None = None
+    default_longitude: float | None = None
 
 
 class UserCreate(UserBase):
@@ -33,6 +36,9 @@ class UserUpdate(BaseModel):
     full_name: str | None = None
     phone_number: str | None = None
     photo_url: str | None = None
+    default_address: str | None = None
+    default_latitude: float | None = None
+    default_longitude: float | None = None
 
 
 class UserResponse(UserBase):

@@ -38,6 +38,7 @@ class OrderCreate(OrderBase):
     payment_method: PaymentMethod | None = None
     payment_details: dict | None = None
     status: OrderStatus | None = None
+    discount_id: uuid.UUID | None = None
 
 
 
@@ -58,10 +59,15 @@ class OrderResponse(OrderBase):
     store_name: str | None = None
     store_address: str | None = None
     store_image_url: str | None = None
+    store_latitude: float | None = None
+    store_longitude: float | None = None
     payment_method: str | None = None
     order_type: str | None = None
     notes: str | None = None
     daily_code: str | None = None
     review: Optional["ReviewResponse"] = None
+    applied_voucher_code: str | None = None
+    applied_voucher_name: str | None = None
+    voucher_discount: int = 0
 
     model_config = ConfigDict(from_attributes=True)

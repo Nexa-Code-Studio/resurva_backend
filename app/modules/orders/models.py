@@ -57,8 +57,38 @@ class Order(Base, IdMixin, CreatedAtMixin):
         return self.store.name if self.store else "Toko RESURVA"
 
     @property
+    def store_latitude(self) -> float | None:
+        return self.store.latitude if self.store else None
+
+    @property
+    def store_longitude(self) -> float | None:
+        return self.store.longitude if self.store else None
+
+    @property
     def store_address(self) -> str:
         return self.store.address if self.store else "Jl. Semeru No. 45, Malang"
+
+    @property
+    def applied_voucher_code(self) -> str | None:
+        if self.order_discounts:
+            od = self.order_discounts[0]
+            if od.discount:
+                return od.discount.code
+        return None
+
+    @property
+    def applied_voucher_name(self) -> str | None:
+        if self.order_discounts:
+            od = self.order_discounts[0]
+            if od.discount:
+                return od.discount.name
+        return None
+
+    @property
+    def voucher_discount(self) -> int:
+        if self.order_discounts:
+            return sum(od.discount_amount for od in self.order_discounts)
+        return 0
 
     @property
     def store_image_url(self) -> str | None:

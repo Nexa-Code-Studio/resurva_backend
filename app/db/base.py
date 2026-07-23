@@ -59,3 +59,4 @@ def import_all_models():
     from app.modules.summaries.models import DailySummary, MonthlySummary  # noqa: F401
     from app.modules.verifications.models import PartnerVerification  # noqa: F401
     from app.modules.cart.models import CartReservation  # noqa: F401
+    from app.modules.logs.models import LogSystem  # noqa: F401
