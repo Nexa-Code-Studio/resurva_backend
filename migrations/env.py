@@ -29,6 +29,7 @@ from app.modules.wallets.models import Wallet, WalletTransaction
 from app.modules.summaries.models import DailySummary, MonthlySummary
 from app.modules.chat.models import Conversation, ChatMessage, ToolCall, ChatMemory
 from app.modules.verifications.models import PartnerVerification
+from app.modules.cart.models import CartReservation
 
 
 # Alembic Config

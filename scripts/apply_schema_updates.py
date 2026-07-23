@@ -3,8 +3,9 @@ import uuid
 from datetime import datetime, UTC
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
+from app.core.config import settings
 
-DATABASE_URL = 'postgresql+asyncpg://postgres:password123@127.0.0.1:5432/resurva'
+DATABASE_URL = settings.async_database_url
 
 async def main():
     engine = create_async_engine(DATABASE_URL)
