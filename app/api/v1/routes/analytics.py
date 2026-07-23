@@ -14,6 +14,7 @@ from app.modules.analytics.schemas import (
     EnterpriseWasteImpactAnalyticsResponse,
     SuperadminDashboardStatsResponse,
     AIInsightsResponse,
+    EnterpriseAIInsightsResponse,
 )
 from app.modules.analytics.service.analytics_service import AnalyticsService
 
@@ -87,6 +88,15 @@ async def get_enterprise_waste_impact_analytics(
     )
 
 
+@router.get("/enterprise/ai-insights", response_model=EnterpriseAIInsightsResponse)
+async def get_enterprise_ai_insights(
+    business_id: uuid.UUID = Query(..., description="Business UUID"),
+    db: AsyncSession = Depends(get_db_session),
+):
+    service = AnalyticsService(db)
+    return await service.get_enterprise_ai_insights(business_id=business_id)
+
+
 
 
 
@@ -129,10 +139,28 @@ async def get_inventory_recommendations(
 
 @router.get("/superadmin/stats", response_model=SuperadminDashboardStatsResponse)
 async def get_superadmin_dashboard_stats(
+    timeframe: str = Query("all", description="Timeframe filter (all, today, 7d, 30d, this_month)"),
+    city: str = Query("all", description="City filter"),
     db: AsyncSession = Depends(get_db_session)
 ):
     service = AnalyticsService(db)
-    return await service.get_superadmin_stats()
+    return await service.get_superadmin_stats(timeframe=timeframe, city=city)
+
+
+@router.get("/superadmin/cities", response_model=list[str])
+async def get_superadmin_cities(
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = AnalyticsService(db)
+    return await service.get_superadmin_cities()
+
+
+@router.get("/superadmin/ai-insights", response_model=EnterpriseAIInsightsResponse)
+async def get_superadmin_ai_insights(
+    db: AsyncSession = Depends(get_db_session)
+):
+    service = AnalyticsService(db)
+    return await service.get_superadmin_ai_insights()
 
 
 @router.get("/ai-insights", response_model=AIInsightsResponse)
@@ -142,4 +170,5 @@ async def get_ai_insights(
 ):
     service = AnalyticsService(db)
     return await service.get_ai_insights(store_id=store_id)
+
 

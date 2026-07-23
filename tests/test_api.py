@@ -185,3 +185,34 @@ async def test_complete_flow():
         assert req_data["phone"] == "08123456789"
         assert req_data["status"] == "PENDING"
 
+        # 13. Test order real-time SSE stream route
+        # Register a seller first
+        seller_username = f"seller_{unique_suffix}"
+        seller_email = f"seller_{unique_suffix}@email.com"
+        seller_payload = {
+            "username": seller_username,
+            "email": seller_email,
+            "password": "securepassword123",
+            "role": "seller",
+            "business_id": business_id,
+            "store_id": store_id
+        }
+        resp = await ac.post("/api/v1/auth/register", json=seller_payload)
+        assert resp.status_code == 201, resp.text
+
+        # Login Seller
+        login_seller_payload = {
+            "username_or_email": seller_username,
+            "password": "securepassword123"
+        }
+        resp = await ac.post("/api/v1/auth/login", json=login_seller_payload)
+        assert resp.status_code == 200, resp.text
+        seller_token = resp.json()["access_token"]
+
+        # Call stream endpoint and verify connection
+        async with ac.stream("GET", f"/api/v1/orders/stream?store_id={store_id}&token={seller_token}") as sse_resp:
+            assert sse_resp.status_code == 200
+            assert "text/event-stream" in sse_resp.headers.get("content-type", "")
+
+
+

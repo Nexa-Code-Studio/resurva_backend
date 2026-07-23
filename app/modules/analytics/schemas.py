@@ -146,6 +146,14 @@ class EnterpriseWasteImpactAnalyticsResponse(BaseModel):
     emission_trend: list[EmissionTrendItem]
 
 
+class SuperadminTrendItem(BaseModel):
+    month: str
+    saved_kg: float
+    co2_saved_kg: float
+    transactions: int
+    gmv: float
+
+
 class SuperadminDashboardStatsResponse(BaseModel):
     total_saved_kg: float
     total_saved_kg_diff: float | None = None
@@ -159,12 +167,20 @@ class SuperadminDashboardStatsResponse(BaseModel):
     global_gmv: float
     pending_merchant_verifications: int
     pending_enterprise_verifications: int
+    trends: list[SuperadminTrendItem]
+
 
 
 class AIInsightsResponse(BaseModel):
     sales_stock_optimization: str
     surplus_conversion: str
     customer_sentiment: str
+
+
+class EnterpriseAIInsightsResponse(BaseModel):
+    recommendation: str
+
+
 
 
 
